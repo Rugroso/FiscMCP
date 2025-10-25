@@ -21,6 +21,7 @@ class GeminiClient:
     async def generate_embedding(self, text: str) -> List[float]:
         """
         Genera embedding para un texto usando Gemini
+        Compatible con el formato del código Python original
         
         Args:
             text: Texto para generar embedding
@@ -31,13 +32,119 @@ class GeminiClient:
         try:
             result = await asyncio.to_thread(
                 genai.embed_content,
-                model="models/text-embedding-004",
+                model=config.GEMINI_EMBED_MODEL,
                 content=text,
-                task_type="retrieval_document"
+                task_type="retrieval_query",
+                output_dimensionality=config.EMBED_DIM
             )
-            return result['embedding']
+            
+            # Extraer embedding según la estructura de respuesta
+            if isinstance(result, dict):
+                if "embedding" in result:
+                    emb = result["embedding"]
+                    if isinstance(emb, dict) and "values" in emb:
+                        return emb["values"]
+                    if isinstance(emb, list):
+                        return emb
+                if "embeddings" in result and isinstance(result["embeddings"], list) and result["embeddings"]:
+                    e0 = result["embeddings"][0]
+                    if isinstance(e0, dict) and "values" in e0:
+                        return e0["values"]
+                    if isinstance(e0, list):
+                        return e0
+            
+            # Si result tiene atributo embedding
+            if hasattr(result, "embedding"):
+                emb = getattr(result, "embedding")
+                if isinstance(emb, dict) and "values" in emb:
+                    return emb["values"]
+                if hasattr(emb, "values"):
+                    return emb.values
+                if isinstance(emb, list):
+                    return emb
+            
+            # Fallback
+            if hasattr(result, "embeddings"):
+                emb_list = getattr(result, "embeddings") or []
+                if emb_list:
+                    e0 = emb_list[0]
+                    if isinstance(e0, dict) and "values" in e0:
+                        return e0["values"]
+                    if hasattr(e0, "values"):
+                        return e0.values
+                    if isinstance(e0, list):
+                        return e0
+            
+            raise RuntimeError("No se pudo extraer embedding de la respuesta")
+            
         except Exception as error:
             print(f"Error generando embedding: {error}")
+            raise error
+    
+    async def generate_recommendation(
+        self, 
+        profile: Dict[str, Any], 
+        context: str
+    ) -> str:
+        """
+        Genera recomendación fiscal usando RAG (contexto de documentos relevantes)
+        Similar al generate_recommendation del código Python original
+        
+        Args:
+            profile: Perfil fiscal del usuario
+            context: Contexto construido de documentos relevantes
+            
+        Returns:
+            Recomendación detallada en formato markdown
+        """
+        try:
+            import json
+            
+            system_instruction = (
+                "Eres un asesor fiscal para micro-negocios en México. "
+                "Responde SOLO con el CONTEXTO provisto. Si no es suficiente, indica claramente "
+                "'Información insuficiente en la base'. Usa lenguaje claro. Incluye mini-citas de fuente."
+            )
+            
+            user_prompt = f"""
+PERFIL:
+{json.dumps(profile, ensure_ascii=False, indent=2)}
+
+TAREA:
+1) Recomienda régimen fiscal (y alternativas si aplica).
+2) Explica pasos de formalización (RFC, e.firma, CFDI, declaraciones).
+3) Lista 5-8 tareas accionables (formato checklist).
+4) Si procede, sugiere recordatorios calendario (mensual/anual).
+5) Cierra con "Fuentes" (Título -> URL) basadas en los fragmentos usados.
+
+CONTEXTO:
+{context}
+""".strip()
+
+            # Crear modelo con system instruction
+            model = genai.GenerativeModel(
+                model_name=config.GEMINI_MODEL,
+                system_instruction=system_instruction
+            )
+            
+            # Configurar generación
+            generation_config = {
+                "temperature": 0.3,
+                "max_output_tokens": 1200
+            }
+            
+            response = await asyncio.to_thread(
+                model.generate_content,
+                user_prompt,
+                generation_config=generation_config
+            )
+            
+            return response.text or "(Sin texto)"
+            
+        except Exception as error:
+            print(f"Error generando recomendación RAG: {error}")
+            import traceback
+            traceback.print_exc()
             raise error
     
     async def enhance_recommendation(

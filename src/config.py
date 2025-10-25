@@ -22,10 +22,12 @@ class Config:
     # Gemini AI
     GEMINI_API_KEY: str = os.getenv('GEMINI_API_KEY', '')
     GEMINI_MODEL: str = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash-exp')
+    GEMINI_EMBED_MODEL: str = 'models/text-embedding-004'
     
-    # Configuración de embeddings
+    # Configuración de embeddings y RAG
     EMBED_DIM: int = int(os.getenv('EMBED_DIM', '768'))
-    SIMILARITY_THRESHOLD: float = float(os.getenv('SIMILARITY_THRESHOLD', '0.7'))
+    SIMILARITY_THRESHOLD: float = float(os.getenv('SIMILARITY_THRESHOLD', '0.6'))
+    TOPK_DOCUMENTS: int = int(os.getenv('TOPK_DOCUMENTS', '6'))
     
     @classmethod
     def validate_required_vars(cls) -> None:

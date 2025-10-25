@@ -22,31 +22,53 @@ class SupabaseClient:
     async def search_similar_documents(
         self, 
         embedding: List[float], 
-        limit: int = 5
+        limit: int = 5,
+        threshold: float = None
     ) -> List[Dict[str, Any]]:
         """
         Buscar documentos similares usando embeddings
+        Compatible con match_fiscai_documents RPC
         
         Args:
             embedding: Vector de embedding para la búsqueda
             limit: Número máximo de documentos a retornar
+            threshold: Umbral de similitud (default: 0.6)
             
         Returns:
-            Lista de documentos similares
+            Lista de documentos similares con campos: title, scope, content, source_url, similarity
         """
         try:
+            if threshold is None:
+                threshold = config.SIMILARITY_THRESHOLD if hasattr(config, 'SIMILARITY_THRESHOLD') else 0.6
+            
+            # Intentar con match_fiscai_documents primero
             response = await asyncio.to_thread(
                 self.client.rpc,
-                'match_documents',
+                'match_fiscai_documents',
                 {
                     'query_embedding': embedding,
-                    'match_threshold': config.SIMILARITY_THRESHOLD,
+                    'match_threshold': threshold,
                     'match_count': limit
                 }
             )
             
             if response.data:
                 return response.data
+            
+            # Fallback: intentar con match_documents
+            response = await asyncio.to_thread(
+                self.client.rpc,
+                'match_documents',
+                {
+                    'query_embedding': embedding,
+                    'match_threshold': threshold,
+                    'match_count': limit
+                }
+            )
+            
+            if response.data:
+                return response.data
+                
             return []
             
         except Exception as error:

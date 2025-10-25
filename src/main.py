@@ -61,7 +61,13 @@ class UserContextRequest(BaseModel):
 @mcp.tool()
 async def get_fiscal_advice(request: FiscalAdviceRequest) -> Dict[str, Any]:
     """
-    Obtener recomendaciones fiscales personalizadas para un negocio mexicano.
+    Obtener recomendaciones fiscales personalizadas usando RAG (Retrieval-Augmented Generation).
+    
+    Implementa el flujo completo:
+    1. Genera query semántica enriquecida del perfil
+    2. Busca documentos relevantes con embeddings (top-k)
+    3. Construye contexto con documentos encontrados
+    4. Genera recomendación con Gemini usando el contexto
     
     Proporciona análisis detallado del régimen fiscal más conveniente,
     pasos de formalización, obligaciones y estimación de costos.
@@ -70,30 +76,86 @@ async def get_fiscal_advice(request: FiscalAdviceRequest) -> Dict[str, Any]:
         # Convertir a diccionario para compatibilidad
         profile_data = request.dict()
         
-        # Buscar casos similares
-        similar_cases = await supabase_client.find_similar_fiscal_cases(profile_data)
+        # 1. Generar query semántica enriquecida (como profile_to_query de Python)
+        query_parts = [
+            f"Actividad: {request.actividad}",
+            f"Ingresos anuales estimados: {request.ingresos_anuales or 'No especificado'}",
+            f"Entidad federativa: {request.estado or 'No especificado'}",
+            f"¿Tiene RFC?: {'Sí' if request.tiene_rfc else 'No'}",
+        ]
         
-        # Crear respuesta base
-        base_recommendation = {
-            'profile': profile_data,
-            'recommendation': f"Análisis fiscal preliminar para {request.actividad}",
-            'timestamp': datetime.now().isoformat()
-        }
+        if request.regimen_actual:
+            query_parts.append(f"Régimen actual: {request.regimen_actual}")
+        if request.contexto_adicional:
+            query_parts.append(f"Contexto: {request.contexto_adicional}")
         
-        # Enriquecer con Gemini
-        enhanced_recommendation = await gemini_client.enhance_recommendation(
-            base_recommendation,
-            similar_cases,
-            profile_data
+        semantic_query = (
+            "Perfil fiscal. Necesito sugerir régimen, pasos de formalización, "
+            "obligaciones y calendario básico, citando fuentes del SAT:\n" + 
+            "\n".join(query_parts)
         )
         
+        print(f"[RAG] Query generada: {semantic_query[:200]}...")
+        
+        # 2. Generar embedding de la query
+        print("[RAG] Generando embedding...")
+        query_embedding = await gemini_client.generate_embedding(semantic_query)
+        
+        # 3. Buscar documentos relevantes (top-k = 6, threshold = 0.6)
+        print("[RAG] Buscando documentos relevantes...")
+        documents = await supabase_client.search_similar_documents(
+            query_embedding, 
+            limit=6,
+            threshold=0.6
+        )
+        
+        print(f"[RAG] Encontrados {len(documents)} documentos relevantes")
+        
+        # 4. Construir contexto estructurado (como build_context de Python)
+        context_blocks = []
+        for i, doc in enumerate(documents, start=1):
+            title = doc.get('title', 'Documento')
+            scope = doc.get('scope', 'General')
+            url = doc.get('source_url', 'SAT')
+            content = doc.get('content', '')
+            
+            block = f"[{i}] {title} — {scope}\nFuente: {url}\n{content}"
+            context_blocks.append(block)
+        
+        context = "\n\n".join(context_blocks)
+        
+        # 5. Generar recomendación con Gemini usando RAG
+        print("[RAG] Generando recomendación con contexto...")
+        recommendation = await gemini_client.generate_recommendation(
+            profile_data,
+            context
+        )
+        
+        # 6. Retornar resultado estructurado
         return {
             'success': True,
-            'data': enhanced_recommendation,
-            'message': f"Recomendación fiscal generada para {request.actividad}"
+            'data': {
+                'recommendation': recommendation,
+                'sources': [
+                    {
+                        'title': doc.get('title', 'Documento'),
+                        'scope': doc.get('scope', 'General'),
+                        'url': doc.get('source_url', 'SAT'),
+                        'similarity': doc.get('similarity', 0.8)
+                    }
+                    for doc in documents
+                ],
+                'matches_count': len(documents),
+                'profile': profile_data
+            },
+            'message': f"Recomendación fiscal generada para {request.actividad} usando {len(documents)} fuentes"
         }
         
     except Exception as error:
+        print(f"[RAG] Error: {error}")
+        import traceback
+        traceback.print_exc()
+        
         return {
             'success': False,
             'error': str(error),
