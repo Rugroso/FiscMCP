@@ -328,22 +328,32 @@ Responde SOLO con la recomendación mejorada, sin comentarios adicionales.
             # 1. DETECCIÓN AUTOMÁTICA DE INTENCIONES
             intent = detect_user_intent(message)
             
-            # 2. SI ES UNA CONSULTA DE UBICACIÓN, LLAMAR DIRECTAMENTE A open_map_location
+            # 2. SI ES UNA CONSULTA DE UBICACIÓN, GENERAR RESPUESTA DIRECTAMENTE
             if intent['requires_map']:
-                # Importar la función del mapa
-                from .main import open_map_location
+                print(f"[CHAT] Detección automática: requiere mapa tipo={intent['location_type']}")
                 
-                # Llamar a la herramienta
-                map_response = await open_map_location(
-                    location_type=intent['location_type'],
-                    search_query=intent['search_query']
-                )
+                # Construir deep link directamente (sin llamar a la herramienta decorada)
+                base_url = "fiscai://map"
+                params = [f"type={intent['location_type']}"]
+                
+                if intent['search_query']:
+                    params.append(f"query={intent['search_query']}")
+                
+                deep_link = f"{base_url}?{'&'.join(params)}"
+                
+                # Construir mensaje descriptivo
+                location_name = "Banorte" if intent['location_type'] == "bank" else "oficinas del SAT"
+                
+                if intent['search_query']:
+                    message_text = f"📍 Busco {location_name} en {intent['search_query']} para ti."
+                else:
+                    message_text = f"📍 ¡Claro! Te abro el mapa con los {location_name} más cercanos."
                 
                 # Retornar respuesta estructurada
                 import json
                 return json.dumps({
-                    'text': map_response['user_message'],
-                    'deep_link': map_response['deep_link'],
+                    'text': message_text,
+                    'deep_link': deep_link,
                     'tool_used': 'open_map_location',
                     'details': {
                         'location_type': intent['location_type'],
