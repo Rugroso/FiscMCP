@@ -108,7 +108,7 @@ async def get_fiscal_advice(request: FiscalAdviceRequest) -> Dict[str, Any]:
         print("[RAG] Buscando documentos relevantes...")
         documents = await supabase_client.search_similar_documents(
             query_embedding, 
-            limit=6,
+            limit=100,
             threshold=0.6
         )
         
