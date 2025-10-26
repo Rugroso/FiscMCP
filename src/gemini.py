@@ -88,7 +88,7 @@ class GeminiClient:
     ) -> str:
         """
         Genera recomendación fiscal usando RAG (contexto de documentos relevantes)
-        Similar al generate_recommendation del código Python original
+        Usa el mismo prompt que simulate_recomendation.py que funciona
         
         Args:
             profile: Perfil fiscal del usuario
@@ -113,30 +113,30 @@ PERFIL:
 TAREA:
 1) Recomienda régimen fiscal (y alternativas si aplica).
 2) Explica pasos de formalización (RFC, e.firma, CFDI, declaraciones).
-3) Lista 5-8 tareas accionables (formato checklist).
-4) Si procede, sugiere recordatorios calendario (mensual/anual).
-5) Cierra con "Fuentes" (Título -> URL) basadas en los fragmentos usados.
+3) Genera un porcentaje de potencial de crecimiento.
+4) Lista 5-8 tareas accionables (formato checklist) para seguir con ese plan de crecimiento.
+5) Si procede, sugiere recordatorios calendario (mensual/anual).
+6) Busca beneficios PYME fiscales aplicables a ese perfil, especifica que el banco es BANORTE.
+7) Cierra con "Fuentes" (Título -> URL) basadas en los fragmentos usados.
 
 CONTEXTO:
 {context}
 """.strip()
 
-            # Crear modelo con system instruction
+            # Crear modelo con system instruction (igual que simulate_recomendation.py)
             model = genai.GenerativeModel(
                 model_name=config.GEMINI_MODEL,
-                system_instruction=system_instruction
+                system_instruction=system_instruction,
+                generation_config={
+                    "temperature": 0.3,
+                    "max_output_tokens": 1200
+                }
             )
             
-            # Configurar generación
-            generation_config = {
-                "temperature": 0.3,
-                "max_output_tokens": 1200
-            }
-            
+            # Generar contenido
             response = await asyncio.to_thread(
                 model.generate_content,
-                user_prompt,
-                generation_config=generation_config
+                user_prompt
             )
             
             return response.text or "(Sin texto)"

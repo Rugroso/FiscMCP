@@ -57,9 +57,7 @@ class SupabaseClient:
             try:
                 print("[SUPABASE] Llamando match_fiscai_documents RPC...")
                 response = await asyncio.to_thread(
-                    self.client.rpc,
-                    'match_fiscai_documents',
-                    payload
+                    lambda: self.client.rpc('match_fiscai_documents', payload).execute()
                 )
                 
                 if response.data:
@@ -78,9 +76,7 @@ class SupabaseClient:
             # Fallback: intentar con match_documents
             print("[SUPABASE] Intentando fallback con match_documents...")
             response = await asyncio.to_thread(
-                self.client.rpc,
-                'match_documents',
-                payload
+                lambda: self.client.rpc('match_documents', payload).execute()
             )
             
             if response.data:
