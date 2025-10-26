@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from .config import config
 from .gemini import gemini_client
 from .supabase_client import supabase_client
+from .places import search_places
 
 # Crear instancia del servidor FastMCP
 mcp = FastMCP("FiscAI MCP Server", version="1.0.0")
@@ -279,6 +280,41 @@ async def search_fiscal_documents(request: SearchDocumentsRequest) -> Dict[str, 
             'error': str(error),
             'message': "Error buscando documentos fiscales"
         }
+
+
+@mcp.tool()
+async def search_places_tool(request: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Buscar lugares (bancos, oficinas SAT, etc.) usando Google Places via EXPO_PUBLIC_GOOGLE_MAPS_API_KEY.
+    Acepta request con keys: query (required), lat (optional), lng (optional), limit (optional)
+    Retorna { success: true, data: { query, results: [...] } }
+    """
+    try:
+        # soportar varios envoltorios: request puede venir directo o como objeto pydantic
+        if isinstance(request, dict) and request.get('request'):
+            body = request.get('request')
+        else:
+            body = request if isinstance(request, dict) else {}
+
+        query = body.get('query') or body.get('textQuery') or ''
+        if not query:
+            return {'success': False, 'error': 'Falta query', 'message': 'Se requiere query'}
+
+        lat = body.get('lat')
+        lng = body.get('lng')
+        limit = int(body.get('limit', 5))
+
+        # Llamar la implementación de places
+        result = search_places(query=query, lat=float(lat) if lat else None, lng=float(lng) if lng else None, limit=limit)
+
+        return {
+            'success': True,
+            'data': result,
+            'message': f"Encontrados {len(result.get('results', []))} lugares para '{query}'"
+        }
+    except Exception as e:
+        print('[search_places_tool] Error:', e)
+        return {'success': False, 'error': str(e), 'message': 'Error buscando lugares'}
 
 @mcp.tool()
 async def get_user_fiscal_context(request: UserContextRequest) -> Dict[str, Any]:
