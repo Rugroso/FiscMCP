@@ -7,6 +7,11 @@ supabase>=2.3.4
 # AI/ML
 google-generativeai>=0.8.3
 
+# Machine Learning
+joblib>=1.3.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+
 # Validación de datos
 pydantic>=2.5.3
 
