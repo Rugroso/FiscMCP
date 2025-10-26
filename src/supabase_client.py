@@ -46,9 +46,12 @@ class SupabaseClient:
             print(f"[SUPABASE] - Match threshold: {threshold}")
             print(f"[SUPABASE] - Match count: {limit}")
             
-            # Convertir embedding a formato JSONB (array de strings para PostgreSQL)
-            # La función RPC espera jsonb, no un array de floats directamente
-            embedding_json = embedding  # Mantener como lista de floats
+            # Preparar payload - usar query_embedding como en el script que funciona
+            payload = {
+                'query_embedding': embedding,  # float8[] - igual que simulate_recomendation.py
+                'match_threshold': threshold,
+                'match_count': limit
+            }
             
             # Intentar con match_fiscai_documents primero
             try:
@@ -56,11 +59,7 @@ class SupabaseClient:
                 response = await asyncio.to_thread(
                     self.client.rpc,
                     'match_fiscai_documents',
-                    {
-                        'query_embedding_json': embedding_json,
-                        'match_threshold': threshold,
-                        'match_count': limit
-                    }
+                    payload
                 )
                 
                 if response.data:
@@ -72,18 +71,16 @@ class SupabaseClient:
                     return response.data
             except Exception as rpc_error:
                 print(f"[SUPABASE] ⚠️  Error en match_fiscai_documents: {rpc_error}")
-                # Intentar con nombre alternativo
+                import traceback
+                traceback.print_exc()
+                # Continuar con fallback
             
             # Fallback: intentar con match_documents
             print("[SUPABASE] Intentando fallback con match_documents...")
             response = await asyncio.to_thread(
                 self.client.rpc,
                 'match_documents',
-                {
-                    'query_embedding': embedding_json,
-                    'match_threshold': threshold,
-                    'match_count': limit
-                }
+                payload
             )
             
             if response.data:

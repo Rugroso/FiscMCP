@@ -34,7 +34,7 @@ class GeminiClient:
                 genai.embed_content,
                 model=config.GEMINI_EMBED_MODEL,
                 content=text,
-                task_type="retrieval_query",
+                task_type="RETRIEVAL_QUERY",  # Mayúsculas como en simulate_recomendation.py
                 output_dimensionality=config.EMBED_DIM
             )
             
