@@ -692,43 +692,51 @@ async def get_financial_recommendations_logic(
         embedding_creditos = await gemini_client.generate_embedding(consulta_creditos)
         embedding_deducciones = await gemini_client.generate_embedding(consulta_deducciones)
         
-        # Buscar documentos relevantes
+        # Buscar documentos relevantes FILTRANDO POR SCOPE "beneficios"
         docs_creditos = []
         docs_deducciones = []
         
         if embedding_creditos:
-            docs_creditos = await supabase_client.search_similar_documents(
+            # Buscar específicamente en scope "beneficios" para créditos
+            docs_creditos = await supabase_client.search_documents_by_scope(
                 embedding=embedding_creditos,
-                limit=3,
+                scope="beneficios",
+                limit=5,
                 threshold=0.5
             )
+            print(f"[FINANCIAL] Encontrados {len(docs_creditos)} documentos de créditos en scope 'beneficios'")
         
         if embedding_deducciones:
-            docs_deducciones = await supabase_client.search_similar_documents(
+            # Buscar específicamente en scope "beneficios" para deducciones
+            docs_deducciones = await supabase_client.search_documents_by_scope(
                 embedding=embedding_deducciones,
-                limit=3,
+                scope="beneficios",
+                limit=5,
                 threshold=0.5
             )
+            print(f"[FINANCIAL] Encontrados {len(docs_deducciones)} documentos de deducciones en scope 'beneficios'")
         
         # Procesar recomendaciones de crédito
         credit_options = []
         for doc in docs_creditos:
-            if doc.get('similarity', 0) > 0.5:
+            if doc.get('similarity', 0) > 0.45:  # Umbral ligeramente más bajo para más resultados
                 credit_options.append({
                     'title': doc.get('title', 'Opción de financiamiento'),
                     'description': doc.get('content', '')[:300] + '...',
                     'source': doc.get('source_url', ''),
+                    'scope': doc.get('scope', 'beneficios'),
                     'relevance': round(doc.get('similarity', 0) * 100, 1)
                 })
         
         # Procesar deducciones fiscales
         tax_deductions = []
         for doc in docs_deducciones:
-            if doc.get('similarity', 0) > 0.5:
+            if doc.get('similarity', 0) > 0.45:  # Umbral ligeramente más bajo para más resultados
                 tax_deductions.append({
                     'title': doc.get('title', 'Deducción fiscal'),
                     'description': doc.get('content', '')[:300] + '...',
                     'source': doc.get('source_url', ''),
+                    'scope': doc.get('scope', 'beneficios'),
                     'relevance': round(doc.get('similarity', 0) * 100, 1)
                 })
         
