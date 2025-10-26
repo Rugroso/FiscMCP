@@ -668,24 +668,50 @@ async def get_financial_recommendations_logic(
 ) -> Dict[str, Any]:
     """Lógica interna para obtener recomendaciones financieras"""
     try:
-        # Calcular métricas básicas
+        # Calcular métricas financieras completas
         ingresos_anuales = ingresos_mensuales * 12
         utilidad_mensual = ingresos_mensuales - gastos_mensuales
         margen_utilidad = (utilidad_mensual / ingresos_mensuales) if ingresos_mensuales > 0 else 0
         
-        # Construir consulta para buscar información relevante
+        # Determinar categoría de negocio para mejores recomendaciones
+        if ingresos_anuales < 300000:
+            categoria_negocio = "micronegocio"
+            rango_credito = "microcréditos"
+        elif ingresos_anuales < 2000000:
+            categoria_negocio = "pequeña empresa"
+            rango_credito = "créditos PyME"
+        elif ingresos_anuales < 10000000:
+            categoria_negocio = "mediana empresa"
+            rango_credito = "créditos empresariales"
+        else:
+            categoria_negocio = "gran empresa"
+            rango_credito = "financiamiento corporativo"
+        
+        # Construir queries semánticas más específicas y contextuales
         consulta_creditos = f"""
-        Opciones de crédito y financiamiento para {actividad}.
-        Ingresos anuales: ${ingresos_anuales:,.0f} MXN.
-        {'Con RFC registrado' if tiene_rfc else 'Sin RFC'}.
-        {f'Régimen fiscal: {regimen_fiscal}' if regimen_fiscal else ''}.
-        {f'Con {num_empleados} empleados' if num_empleados > 0 else 'Sin empleados'}.
+        Necesito información sobre {rango_credito} y opciones de financiamiento bancario para {actividad} en México.
+        Perfil del negocio:
+        - Categoría: {categoria_negocio}
+        - Ingresos anuales: ${ingresos_anuales:,.0f} MXN (${ingresos_mensuales:,.0f} mensuales)
+        - {'Empresa formal con RFC' if tiene_rfc else 'Negocio informal sin RFC'}
+        - {f'Régimen fiscal: {regimen_fiscal}' if regimen_fiscal else 'Sin régimen definido'}
+        - {f'Plantilla de {num_empleados} empleados' if num_empleados > 0 else 'Negocio sin empleados'}
+        - Utilidad mensual: ${utilidad_mensual:,.0f} MXN
+        
+        Busco: líneas de crédito, tasas de interés, requisitos, montos disponibles, plazos de pago.
+        Bancos: Banorte, BBVA, Santander, programas gubernamentales, financieras.
         """
         
         consulta_deducciones = f"""
-        Deducciones fiscales y beneficios tributarios para {actividad}.
-        {'Régimen ' + regimen_fiscal if regimen_fiscal else 'Persona física'}.
-        Gastos mensuales: ${gastos_mensuales:,.0f} MXN.
+        Necesito información sobre deducciones fiscales, estímulos tributarios y beneficios fiscales para {actividad} en México.
+        Perfil fiscal:
+        - {f'Régimen fiscal: {regimen_fiscal}' if regimen_fiscal else 'Persona física sin régimen definido'}
+        - Gastos mensuales operativos: ${gastos_mensuales:,.0f} MXN (${gastos_mensuales * 12:,.0f} anuales)
+        - {f'Con {num_empleados} empleados en nómina' if num_empleados > 0 else 'Sin empleados'}
+        - {'Con RFC activo' if tiene_rfc else 'Sin RFC'}
+        
+        Busco: deducciones autorizadas, gastos deducibles, requisitos, límites, CFDI necesarios, estímulos fiscales.
+        Categorías: gastos operativos, nómina, equipo, inversiones, servicios profesionales.
         """
         
         # Generar embeddings para ambas consultas
@@ -716,146 +742,365 @@ async def get_financial_recommendations_logic(
             )
             print(f"[FINANCIAL] Encontrados {len(docs_deducciones)} documentos de deducciones en scope 'beneficios'")
         
-        # Procesar recomendaciones de crédito
+        # Procesar recomendaciones de crédito con más detalle
         credit_options = []
         for doc in docs_creditos:
-            if doc.get('similarity', 0) > 0.45:  # Umbral ligeramente más bajo para más resultados
+            similarity = doc.get('similarity', 0)
+            if similarity > 0.45:
+                content = doc.get('content', '')
+                # Extraer más contexto del documento
                 credit_options.append({
                     'title': doc.get('title', 'Opción de financiamiento'),
-                    'description': doc.get('content', '')[:300] + '...',
+                    'description': content[:400] if len(content) > 400 else content,
                     'source': doc.get('source_url', ''),
                     'scope': doc.get('scope', 'beneficios'),
-                    'relevance': round(doc.get('similarity', 0) * 100, 1)
+                    'relevance': round(similarity * 100, 1),
+                    'category': 'credit',
+                    'full_content_available': len(content) > 400
                 })
         
-        # Procesar deducciones fiscales
+        # Ordenar por relevancia
+        credit_options.sort(key=lambda x: x['relevance'], reverse=True)
+        
+        # Procesar deducciones fiscales con más detalle
         tax_deductions = []
         for doc in docs_deducciones:
-            if doc.get('similarity', 0) > 0.45:  # Umbral ligeramente más bajo para más resultados
+            similarity = doc.get('similarity', 0)
+            if similarity > 0.45:
+                content = doc.get('content', '')
                 tax_deductions.append({
                     'title': doc.get('title', 'Deducción fiscal'),
-                    'description': doc.get('content', '')[:300] + '...',
+                    'description': content[:400] if len(content) > 400 else content,
                     'source': doc.get('source_url', ''),
                     'scope': doc.get('scope', 'beneficios'),
-                    'relevance': round(doc.get('similarity', 0) * 100, 1)
+                    'relevance': round(similarity * 100, 1),
+                    'category': 'deduction',
+                    'applies_to_regime': regimen_fiscal or 'General',
+                    'full_content_available': len(content) > 400
                 })
         
-        # Generar recomendaciones generales basadas en el perfil
+        # Ordenar por relevancia
+        tax_deductions.sort(key=lambda x: x['relevance'], reverse=True)
+        
+        # Generar recomendaciones generales inteligentes basadas en el perfil
         general_recommendations = []
         
-        # Recomendaciones de crédito
+        # === RECOMENDACIONES DE FORMALIZACIÓN ===
         if not tiene_rfc:
+            urgencia = "critical" if ingresos_anuales > 300000 else "high"
             general_recommendations.append({
-                'type': 'credit',
-                'priority': 'high',
-                'title': 'Obtén tu RFC para acceder a créditos',
-                'description': 'La mayoría de opciones de financiamiento requieren RFC activo.',
-                'action': 'Registrar RFC en el SAT'
+                'type': 'formalization',
+                'priority': urgencia,
+                'title': '🎯 Formaliza tu negocio: Obtén tu RFC',
+                'description': f'Con ingresos de ${ingresos_anuales:,.0f} MXN anuales, la formalización es {"obligatoria" if ingresos_anuales > 300000 else "altamente recomendada"}. Accede a créditos bancarios, deducciones fiscales y credibilidad.',
+                'action': 'Tramitar RFC en línea (SAT) - Proceso gratuito',
+                'estimated_time': '1-2 días hábiles',
+                'estimated_cost': '$0 MXN',
+                'benefits': [
+                    'Acceso a créditos bancarios',
+                    'Deducciones fiscales autorizadas',
+                    'Facturar electrónicamente',
+                    'Mayor credibilidad comercial'
+                ]
             })
-        else:
+        
+        # === RECOMENDACIONES DE CRÉDITO ===
+        if tiene_rfc:
             if ingresos_anuales < 300000:
                 general_recommendations.append({
                     'type': 'credit',
                     'priority': 'medium',
-                    'title': 'Microcréditos para pequeños negocios',
-                    'description': 'Explora opciones de microcréditos con tasas preferenciales.',
-                    'action': 'Consultar programas de apoyo a MiPyMES'
+                    'title': '💰 Microcréditos especializados',
+                    'description': f'Para {categoria_negocio}s como el tuyo, existen programas de microcrédito con montos desde $10,000 hasta $100,000 MXN.',
+                    'action': 'Explorar: Crédito Banorte Enlace Negocios, programas INADEM',
+                    'estimated_amount': '$10,000 - $100,000 MXN',
+                    'requirements': ['RFC activo', 'Identificación oficial', 'Comprobante de domicilio'],
+                    'interest_rate': '12% - 18% anual aproximadamente'
                 })
             elif ingresos_anuales < 2000000:
                 general_recommendations.append({
                     'type': 'credit',
                     'priority': 'medium',
-                    'title': 'Créditos PyME',
-                    'description': 'Accede a créditos empresariales con mejores condiciones.',
-                    'action': 'Comparar opciones en bancos y financieras'
+                    'title': '🏦 Créditos PyME empresariales',
+                    'description': f'Tu {categoria_negocio} califica para créditos empresariales de $100,000 hasta $500,000 MXN con mejores tasas.',
+                    'action': 'Comparar: Banorte Crédito Negocios, BBVA PyME, Santander Negocios',
+                    'estimated_amount': '$100,000 - $500,000 MXN',
+                    'requirements': ['RFC activo', '2+ años operando', 'Estados financieros', 'Historial crediticio'],
+                    'interest_rate': '10% - 15% anual aproximadamente'
                 })
             else:
                 general_recommendations.append({
                     'type': 'credit',
                     'priority': 'medium',
-                    'title': 'Financiamiento empresarial',
-                    'description': 'Considera créditos corporativos y líneas de crédito revolvente.',
-                    'action': 'Consultar banca empresarial'
+                    'title': '🏢 Financiamiento empresarial corporativo',
+                    'description': f'Como {categoria_negocio}, puedes acceder a líneas de crédito revolventes y financiamiento estructurado desde $500,000 MXN.',
+                    'action': 'Consultar banca empresarial: Banorte Corporate, BBVA Bancomer Empresarial',
+                    'estimated_amount': '$500,000+ MXN',
+                    'requirements': ['RFC y estados financieros auditados', '3+ años operando', 'Garantías'],
+                    'interest_rate': '8% - 12% anual aproximadamente'
                 })
         
-        # Recomendaciones de deducciones
+        # === RECOMENDACIONES DE DEDUCCIONES ===
         if tiene_rfc:
+            deduccion_anual = gastos_mensuales * 12
+            ahorro_estimado = deduccion_anual * 0.30  # ~30% de tasa efectiva
+            
             general_recommendations.append({
                 'type': 'deduction',
                 'priority': 'high',
-                'title': 'Deduce gastos operativos',
-                'description': f'Puedes deducir hasta ${gastos_mensuales * 12:,.0f} MXN anuales en gastos relacionados.',
-                'action': 'Conservar facturas y comprobantes'
+                'title': '📊 Maximiza deducciones operativas',
+                'description': f'Puedes deducir hasta ${deduccion_anual:,.0f} MXN anuales en gastos relacionados con tu actividad. Ahorro fiscal estimado: ${ahorro_estimado:,.0f} MXN/año.',
+                'action': 'Solicitar CFDI de todos tus gastos y conservar comprobantes',
+                'categories': [
+                    'Renta de local comercial',
+                    'Servicios (luz, agua, internet, teléfono)',
+                    'Materias primas e insumos',
+                    'Mantenimiento y reparaciones',
+                    'Publicidad y marketing',
+                    'Servicios profesionales (contador, abogado)'
+                ],
+                'requirements': [
+                    'Factura electrónica (CFDI)',
+                    'Pago mediante transferencia, cheque o tarjeta',
+                    'Relacionado estrictamente con la actividad'
+                ],
+                'estimated_savings': f'${ahorro_estimado:,.0f} MXN/año'
             })
             
             if num_empleados > 0:
+                nomina_anual = gastos_mensuales * 12 * 0.4  # Asumiendo 40% es nómina
+                ahorro_nomina = nomina_anual * 0.30
+                
                 general_recommendations.append({
                     'type': 'deduction',
                     'priority': 'high',
-                    'title': 'Deducciones por nómina',
-                    'description': 'Los sueldos y prestaciones son 100% deducibles.',
-                    'action': 'Registrar empleados en el IMSS'
+                    'title': '👥 Deducciones por nómina (100%)',
+                    'description': f'Con {num_empleados} empleados, los sueldos, salarios y prestaciones son 100% deducibles. Deducción estimada: ${nomina_anual:,.0f} MXN/año.',
+                    'action': 'Registrar empleados ante IMSS y emitir CFDI de nómina',
+                    'benefits': [
+                        'Deducción al 100% de sueldos',
+                        'Deducción de cuotas patronales IMSS',
+                        'Deducción de prestaciones (aguinaldo, prima vacacional)',
+                        'Cumplimiento laboral y seguridad social'
+                    ],
+                    'requirements': [
+                        'Alta ante IMSS',
+                        'CFDI de nómina mensual',
+                        'Comprobantes de pago (transferencias)',
+                        'Declaraciones mensuales'
+                    ],
+                    'estimated_savings': f'${ahorro_nomina:,.0f} MXN/año'
                 })
         
-        if regimen_fiscal in ['RIF', 'RESICO']:
+        # === BENEFICIOS POR RÉGIMEN ===
+        if regimen_fiscal in ['RIF', 'RESICO', 'Régimen Simplificado de Confianza']:
+            tasa_reducida = "1%-2.5%" if regimen_fiscal == "RESICO" else "variable"
             general_recommendations.append({
                 'type': 'incentive',
                 'priority': 'high',
-                'title': 'Beneficios de régimen simplificado',
-                'description': f'El régimen {regimen_fiscal} ofrece tasas reducidas y facilidades.',
-                'action': 'Aprovechar beneficios fiscales del régimen'
+                'title': f'Aprovecha beneficios de {regimen_fiscal}',
+                'description': f'Tu régimen ofrece tasas reducidas ({tasa_reducida}), facilidades administrativas y exención de IVA en algunos casos.',
+                'action': 'Verificar que estás aplicando todos los beneficios disponibles',
+                'benefits': [
+                    f'Tasa de ISR reducida ({tasa_reducida})',
+                    'Declaraciones bimestrales simplificadas',
+                    'Facilidades de cumplimiento',
+                    'Posible exención de IVA',
+                    'Deducción de gastos sin CFDI (hasta cierto límite)'
+                ],
+                'limits': f'Ingresos máximos: $3,500,000 MXN anuales' if regimen_fiscal == "RESICO" else 'Consultar límites vigentes'
             })
         
-        # Calcular score de salud financiera
+        # === RECOMENDACIONES DE MEJORA FINANCIERA ===
+        if margen_utilidad < 0.15:
+            general_recommendations.append({
+                'type': 'improvement',
+                'priority': 'high',
+                'title': 'Mejora tu margen de utilidad',
+                'description': f'Tu margen actual ({margen_utilidad*100:.1f}%) está por debajo del recomendado (20%+). Esto limita tu capacidad de crecimiento y acceso a crédito.',
+                'action': 'Analizar estructura de costos y estrategia de precios',
+                'strategies': [
+                    'Reducir gastos innecesarios',
+                    'Negociar mejores precios con proveedores',
+                    'Aumentar precios gradualmente',
+                    'Optimizar procesos operativos',
+                    'Diversificar fuentes de ingreso'
+                ],
+                'target': 'Lograr margen de utilidad mínimo del 20%'
+            })
+        
+        if utilidad_mensual < 0:
+            general_recommendations.append({
+                'type': 'alert',
+                'priority': 'critical',
+                'title': 'Atención: Pérdidas operativas',
+                'description': f'Tu negocio tiene pérdidas de ${abs(utilidad_mensual):,.0f} MXN mensuales. Necesitas ajustar urgentemente.',
+                'action': 'Hacer análisis financiero urgente y plan de recuperación',
+                'immediate_actions': [
+                    'Reducir gastos fijos inmediatamente',
+                    'Evaluar viabilidad del modelo de negocio',
+                    'Buscar asesoría financiera',
+                    'Considerar pivote o ajuste de estrategia'
+                ]
+            })
+        
+        # === RECOMENDACIÓN DE CRECIMIENTO ===
+        if margen_utilidad > 0.25 and utilidad_mensual > 20000 and tiene_rfc:
+            general_recommendations.append({
+                'type': 'growth',
+                'priority': 'medium',
+                'title': '🚀 Tu negocio está listo para escalar',
+                'description': f'Con margen de {margen_utilidad*100:.1f}% y utilidades de ${utilidad_mensual:,.0f} MXN/mes, considera reinvertir para crecer.',
+                'action': 'Evaluar opciones de expansión y financiamiento',
+                'opportunities': [
+                    'Contratar personal adicional',
+                    'Invertir en marketing y ventas',
+                    'Ampliar línea de productos/servicios',
+                    'Abrir nueva sucursal o canal de venta',
+                    'Solicitar crédito para inversión'
+                ]
+            })
+        
+        # Calcular score de salud financiera mejorado
         health_score = 0
+        health_factors = []
+        
+        # Factor 1: Formalización (30 puntos)
         if tiene_rfc:
             health_score += 30
-        if margen_utilidad > 0.2:
+            health_factors.append({'factor': 'RFC activo', 'points': 30, 'status': 'positive'})
+        else:
+            health_factors.append({'factor': 'Sin RFC', 'points': 0, 'status': 'negative'})
+        
+        # Factor 2: Rentabilidad (25 puntos)
+        if margen_utilidad > 0.25:
             health_score += 25
-        if utilidad_mensual > 0:
+            health_factors.append({'factor': f'Excelente margen ({margen_utilidad*100:.1f}%)', 'points': 25, 'status': 'positive'})
+        elif margen_utilidad > 0.15:
+            points = 15
+            health_score += points
+            health_factors.append({'factor': f'Buen margen ({margen_utilidad*100:.1f}%)', 'points': points, 'status': 'neutral'})
+        elif margen_utilidad > 0:
+            points = 5
+            health_score += points
+            health_factors.append({'factor': f'Margen bajo ({margen_utilidad*100:.1f}%)', 'points': points, 'status': 'warning'})
+        else:
+            health_factors.append({'factor': 'Pérdidas operativas', 'points': 0, 'status': 'critical'})
+        
+        # Factor 3: Utilidades (20 puntos)
+        if utilidad_mensual > 50000:
             health_score += 20
-        if num_empleados > 0:
+            health_factors.append({'factor': 'Alta utilidad mensual', 'points': 20, 'status': 'positive'})
+        elif utilidad_mensual > 20000:
+            points = 15
+            health_score += points
+            health_factors.append({'factor': 'Buena utilidad mensual', 'points': points, 'status': 'neutral'})
+        elif utilidad_mensual > 0:
+            points = 10
+            health_score += points
+            health_factors.append({'factor': 'Utilidad positiva', 'points': points, 'status': 'neutral'})
+        else:
+            health_factors.append({'factor': 'Sin utilidades', 'points': 0, 'status': 'critical'})
+        
+        # Factor 4: Empleados y escala (15 puntos)
+        if num_empleados >= 10:
             health_score += 15
+            health_factors.append({'factor': f'{num_empleados} empleados', 'points': 15, 'status': 'positive'})
+        elif num_empleados >= 5:
+            points = 12
+            health_score += points
+            health_factors.append({'factor': f'{num_empleados} empleados', 'points': points, 'status': 'neutral'})
+        elif num_empleados > 0:
+            points = 8
+            health_score += points
+            health_factors.append({'factor': f'{num_empleados} empleados', 'points': points, 'status': 'neutral'})
+        else:
+            health_factors.append({'factor': 'Sin empleados', 'points': 0, 'status': 'neutral'})
+        
+        # Factor 5: Régimen fiscal (10 puntos)
         if regimen_fiscal:
             health_score += 10
+            health_factors.append({'factor': f'Régimen {regimen_fiscal}', 'points': 10, 'status': 'positive'})
+        else:
+            health_factors.append({'factor': 'Sin régimen definido', 'points': 0, 'status': 'neutral'})
         
+        # Determinar nivel de salud
+        if health_score >= 85:
+            health_level = 'Excelente'
+            health_color = 'green'
+            health_emoji = '🟢'
+        elif health_score >= 70:
+            health_level = 'Muy Bueno'
+            health_color = 'lightgreen'
+            health_emoji = '🟢'
+        elif health_score >= 55:
+            health_level = 'Bueno'
+            health_color = 'yellow'
+            health_emoji = '🟡'
+        elif health_score >= 40:
+            health_level = 'Regular'
+            health_color = 'orange'
+            health_emoji = '🟠'
+        else:
+            health_level = 'Necesita atención'
+            health_color = 'red'
+            health_emoji = '🔴'
+        
+        # Construir respuesta final mejorada
         return {
             'success': True,
             'data': {
                 'financial_health': {
                     'score': health_score,
-                    'level': 'Excelente' if health_score >= 80 else 'Bueno' if health_score >= 60 else 'Regular' if health_score >= 40 else 'Necesita mejorar',
+                    'level': health_level,
+                    'color': health_color,
+                    'emoji': health_emoji,
+                    'factors': health_factors,
                     'monthly_profit': utilidad_mensual,
                     'profit_margin': round(margen_utilidad * 100, 1),
-                    'annual_income': ingresos_anuales
+                    'annual_income': ingresos_anuales,
+                    'business_category': categoria_negocio,
+                    'credit_range': rango_credito
                 },
                 'credit_options': credit_options if credit_options else [
                     {
-                        'title': 'Consultar opciones de financiamiento',
-                        'description': 'No se encontraron opciones específicas en la base de datos. Contacta instituciones financieras.',
+                        'title': 'Opciones de financiamiento disponibles',
+                        'description': 'No se encontraron documentos específicos en la base de datos. Te recomendamos: 1) Contactar directamente a Banorte, BBVA o Santander, 2) Consultar programas gubernamentales de apoyo a PyMES, 3) Explorar financieras alternativas como Konfío o Credijusto.',
                         'source': '',
-                        'relevance': 0
+                        'relevance': 0,
+                        'category': 'general'
                     }
                 ],
                 'tax_deductions': tax_deductions if tax_deductions else [
                     {
-                        'title': 'Consultar deducciones fiscales',
-                        'description': 'No se encontraron deducciones específicas en la base de datos. Consulta con un contador.',
+                        'title': 'Deducciones fiscales estándar',
+                        'description': 'No se encontraron documentos específicos en la base de datos. Las deducciones más comunes incluyen: gastos operativos (renta, servicios), compra de mercancía, nómina de empleados, equipo y mobiliario. Consulta con un contador para tu caso específico.',
                         'source': '',
-                        'relevance': 0
+                        'relevance': 0,
+                        'category': 'general'
                     }
                 ],
                 'recommendations': general_recommendations,
+                'summary': {
+                    'total_credit_options': len(credit_options),
+                    'total_deductions': len(tax_deductions),
+                    'total_recommendations': len(general_recommendations),
+                    'high_priority_actions': len([r for r in general_recommendations if r.get('priority') in ['high', 'critical']]),
+                    'estimated_annual_savings': f'${(gastos_mensuales * 12 * 0.30):,.0f} MXN' if tiene_rfc else 'N/A (requiere RFC)'
+                },
                 'profile': {
                     'actividad': actividad,
                     'monthly_income': ingresos_mensuales,
                     'monthly_expenses': gastos_mensuales,
+                    'monthly_profit': utilidad_mensual,
+                    'profit_margin_pct': round(margen_utilidad * 100, 1),
                     'has_rfc': tiene_rfc,
                     'regime': regimen_fiscal or 'No especificado',
-                    'employees': num_empleados
+                    'employees': num_empleados,
+                    'business_category': categoria_negocio
                 }
             },
-            'message': f'Encontradas {len(credit_options)} opciones de crédito y {len(tax_deductions)} deducciones fiscales'
+            'message': f'{health_emoji} Salud financiera: {health_level} ({health_score}/100). Encontradas {len(credit_options)} opciones de crédito y {len(tax_deductions)} deducciones fiscales.'
         }
         
     except Exception as error:
