@@ -92,6 +92,60 @@ class SupabaseClient:
             traceback.print_exc()
             return []
     
+    async def search_documents_by_scope(
+        self, 
+        embedding: List[float], 
+        scope: str,
+        limit: int = 5,
+        threshold: float = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Buscar documentos similares filtrando por scope específico
+        
+        Args:
+            embedding: Vector de embedding para la búsqueda
+            scope: Scope a filtrar (ej: "beneficios", "regimenes", "obligaciones")
+            limit: Número máximo de documentos a retornar
+            threshold: Umbral de similitud (default: 0.5)
+            
+        Returns:
+            Lista de documentos similares filtrados por scope
+        """
+        try:
+            if threshold is None:
+                threshold = 0.5
+            
+            print(f"[SUPABASE] Buscando documentos con scope '{scope}'...")
+            print(f"[SUPABASE] - Embedding dimension: {len(embedding)}")
+            print(f"[SUPABASE] - Match threshold: {threshold}")
+            print(f"[SUPABASE] - Match count: {limit}")
+            
+            # Buscar todos los documentos similares primero
+            all_docs = await self.search_similar_documents(
+                embedding=embedding,
+                limit=limit * 2,  # Buscar más para compensar el filtrado
+                threshold=threshold
+            )
+            
+            # Filtrar por scope
+            filtered_docs = [
+                doc for doc in all_docs 
+                if doc.get('scope', '').lower() == scope.lower()
+            ]
+            
+            # Limitar resultados
+            filtered_docs = filtered_docs[:limit]
+            
+            print(f"[SUPABASE] ✅ Encontrados {len(filtered_docs)} documentos con scope '{scope}'")
+            
+            return filtered_docs
+            
+        except Exception as error:
+            print(f"[SUPABASE] ❌ Error buscando documentos por scope: {error}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
     async def get_user_context(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
         Obtener contexto del usuario desde la base de datos
