@@ -41,38 +41,62 @@ class SupabaseClient:
             if threshold is None:
                 threshold = config.SIMILARITY_THRESHOLD if hasattr(config, 'SIMILARITY_THRESHOLD') else 0.6
             
-            # Intentar con match_fiscai_documents primero
-            response = await asyncio.to_thread(
-                self.client.rpc,
-                'match_fiscai_documents',
-                {
-                    'query_embedding': embedding,
-                    'match_threshold': threshold,
-                    'match_count': limit
-                }
-            )
+            print(f"[SUPABASE] Buscando documentos similares...")
+            print(f"[SUPABASE] - Embedding dimension: {len(embedding)}")
+            print(f"[SUPABASE] - Match threshold: {threshold}")
+            print(f"[SUPABASE] - Match count: {limit}")
             
-            if response.data:
-                return response.data
+            # Convertir embedding a formato JSONB (array de strings para PostgreSQL)
+            # La función RPC espera jsonb, no un array de floats directamente
+            embedding_json = embedding  # Mantener como lista de floats
+            
+            # Intentar con match_fiscai_documents primero
+            try:
+                print("[SUPABASE] Llamando match_fiscai_documents RPC...")
+                response = await asyncio.to_thread(
+                    self.client.rpc,
+                    'match_fiscai_documents',
+                    {
+                        'query_embedding_json': embedding_json,
+                        'match_threshold': threshold,
+                        'match_count': limit
+                    }
+                )
+                
+                if response.data:
+                    print(f"[SUPABASE] ✅ Encontrados {len(response.data)} documentos")
+                    # Imprimir primer resultado para debug
+                    if response.data:
+                        first = response.data[0]
+                        print(f"[SUPABASE] Ejemplo: {first.get('title', 'N/A')} (similarity: {first.get('similarity', 0)})")
+                    return response.data
+            except Exception as rpc_error:
+                print(f"[SUPABASE] ⚠️  Error en match_fiscai_documents: {rpc_error}")
+                # Intentar con nombre alternativo
             
             # Fallback: intentar con match_documents
+            print("[SUPABASE] Intentando fallback con match_documents...")
             response = await asyncio.to_thread(
                 self.client.rpc,
                 'match_documents',
                 {
-                    'query_embedding': embedding,
+                    'query_embedding': embedding_json,
                     'match_threshold': threshold,
                     'match_count': limit
                 }
             )
             
             if response.data:
+                print(f"[SUPABASE] ✅ Encontrados {len(response.data)} documentos (fallback)")
                 return response.data
-                
+            
+            print("[SUPABASE] ⚠️  No se encontraron documentos")
             return []
             
         except Exception as error:
-            print(f"Error buscando documentos similares: {error}")
+            print(f"[SUPABASE] ❌ Error buscando documentos similares: {error}")
+            import traceback
+            traceback.print_exc()
             return []
     
     async def get_user_context(self, user_id: str) -> Optional[Dict[str, Any]]:
