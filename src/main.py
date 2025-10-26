@@ -674,19 +674,22 @@ async def get_financial_recommendations_logic(
         margen_utilidad = (utilidad_mensual / ingresos_mensuales) if ingresos_mensuales > 0 else 0
         
         # Construir consulta para buscar información relevante
-        consulta_creditos = f"""
-        Opciones de crédito y financiamiento para {actividad}.
-        Ingresos anuales: ${ingresos_anuales:,.0f} MXN.
-        {'Con RFC registrado' if tiene_rfc else 'Sin RFC'}.
-        {f'Régimen fiscal: {regimen_fiscal}' if regimen_fiscal else ''}.
-        {f'Con {num_empleados} empleados' if num_empleados > 0 else 'Sin empleados'}.
-        """
-        
-        consulta_deducciones = f"""
-        Deducciones fiscales y beneficios tributarios para {actividad}.
-        {'Régimen ' + regimen_fiscal if regimen_fiscal else 'Persona física'}.
-        Gastos mensuales: ${gastos_mensuales:,.0f} MXN.
-        """
+        consulta_creditos = (
+            f"Eres un asistente financiero experto. Resume en una frase clara y sin saltos de línea una opción de crédito relevante para un negocio con estas características: "
+            f"Actividad: {actividad}. Ingresos anuales: ${ingresos_anuales:,.0f} MXN. "
+            f"{'Con RFC registrado' if tiene_rfc else 'Sin RFC'}. "
+            f"{f'Regimen fiscal: {regimen_fiscal}.' if regimen_fiscal else ''} "
+            f"{f'Con {num_empleados} empleados.' if num_empleados > 0 else 'Sin empleados.'} "
+            "Devuelve solo la descripción limpia, sin saltos de línea, sin formato extraño, y que sea fácil de entender para un usuario MCP."
+        )
+
+        consulta_deducciones = (
+            f"Eres un asistente fiscal experto. Resume en una frase clara y sin saltos de línea una deducción fiscal relevante para un negocio con estas características: "
+            f"Actividad: {actividad}. "
+            f"{'Régimen ' + regimen_fiscal if regimen_fiscal else 'Persona física'}. "
+            f"Gastos mensuales: ${gastos_mensuales:,.0f} MXN. "
+            "Devuelve solo la descripción limpia, sin saltos de línea, sin formato extraño, y que sea fácil de entender para un usuario MCP."
+        )
         
         # Generar embeddings para ambas consultas
         embedding_creditos = await gemini_client.generate_embedding(consulta_creditos)

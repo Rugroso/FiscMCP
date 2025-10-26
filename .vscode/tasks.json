@@ -1,0 +1,59 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Lint - EstudIA",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"lint"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$eslint-stylish"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Install upload deps",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"i",
+				"expo-document-picker",
+				"expo-image-picker"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Prebuild - configure plugins",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"expo",
+				"prebuild",
+				"--platform",
+				"android,ios",
+				"--no-install"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Install upload deps",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"i",
+				"expo-document-picker",
+				"expo-image-picker",
+				"expo-file-system",
+				"base64-arraybuffer"
+			],
+			"isBackground": false,
+			"group": "build"
+		}
+	]
+}
