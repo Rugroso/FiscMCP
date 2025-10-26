@@ -76,6 +76,9 @@ async def get_fiscal_advice(request: FiscalAdviceRequest) -> Dict[str, Any]:
     try:
         # Convertir a diccionario para compatibilidad
         profile_data = request.dict()
+        # Corregir datos financieros sin sentido antes de usarlos
+        from .gemini import gemini_client
+        profile_data = await gemini_client.make_financial_data_sensible(profile_data)
         
         # 1. Generar query semántica enriquecida (como profile_to_query de Python)
         query_parts = [

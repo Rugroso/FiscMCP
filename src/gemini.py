@@ -99,6 +99,41 @@ def detect_user_intent(message: str) -> Dict[str, Any]:
     }
 
 class GeminiClient:
+    async def make_financial_data_sensible(self, data: dict) -> dict:
+        """
+        Revisa un diccionario de información financiera y usa Gemini para dar sentido a los valores que no lo tengan,
+        sin modificar palabras o datos que ya sean válidos.
+        Args:
+            data: Diccionario con información financiera (puede tener valores sin sentido)
+        Returns:
+            Diccionario con los mismos campos, pero los que no tengan sentido serán corregidos/desambiguados por Gemini.
+        """
+        import json
+        prompt = (
+            "Eres un experto en finanzas y fiscalidad mexicana. Recibirás un JSON con información financiera que puede contener palabras, frases o valores sin sentido, incompletos o confusos. "
+            "Tu tarea es: \n"
+            "- NO modifiques palabras o valores que ya sean claros y correctos.\n"
+            "- Si encuentras algo que no tiene sentido, corrígelo o dale sentido, usando contexto financiero realista.\n"
+            "- Mantén el mismo formato y claves del JSON original.\n"
+            "- Responde SOLO con el JSON corregido, sin explicaciones.\n"
+            "Ejemplo de entrada: { 'utilidad': 'asdasd', 'ingresos': 10000 }\n"
+            "Ejemplo de salida: { 'utilidad': 'Utilidad no disponible', 'ingresos': 10000 }\n"
+            f"\n\nDatos a revisar:\n{json.dumps(data, ensure_ascii=False, indent=2)}"
+        )
+        try:
+            response = await asyncio.to_thread(
+                self.model.generate_content,
+                prompt
+            )
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', response.text)
+            if json_match:
+                return json.loads(json_match.group(0))
+            # Si no se puede parsear, regresa el original
+            return data
+        except Exception as error:
+            print(f"Error en make_financial_data_sensible: {error}")
+            return data
     """Cliente para interactuar con Google Gemini AI"""
     
     def __init__(self):
