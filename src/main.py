@@ -91,8 +91,10 @@ async def get_fiscal_advice(request: FiscalAdviceRequest) -> Dict[str, Any]:
             query_parts.append(f"Contexto: {request.contexto_adicional}")
         
         semantic_query = (
-            "Perfil fiscal. Necesito sugerir régimen, pasos de formalización, "
-            "obligaciones y calendario básico, citando fuentes del SAT:\n" + 
+            "Como contador en México, necesito analizar este perfil y sugerir: "
+            "1) Régimen fiscal más conveniente, "
+            "2) Pasos específicos de formalización, "
+            "3) Fuentes consultadas:\n" + 
             "\n".join(query_parts)
         )
         
