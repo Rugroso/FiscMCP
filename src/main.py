@@ -424,6 +424,138 @@ async def open_map_location(location_type: str, place_id: Optional[str] = None, 
             'message': "Error generando enlace al mapa"
         }
 
+# Función auxiliar para predicción de crecimiento
+async def predict_growth_logic(
+    monthly_income: float,
+    monthly_expenses: float,
+    net_profit: float,
+    profit_margin: float,
+    cash_flow: float,
+    debt_ratio: float,
+    business_age_years: int,
+    employees: int,
+    digitalization_score: float,
+    access_to_credit: bool
+) -> Dict[str, Any]:
+    """Lógica interna para predecir crecimiento usando el modelo ML"""
+    try:
+        import joblib
+        import pandas as pd
+        import os
+        
+        # Ruta al modelo
+        model_path = os.path.join(os.path.dirname(__file__), 'modelDemo', 'business_growth_predictor.pkl')
+        
+        # Verificar que el modelo existe
+        if not os.path.exists(model_path):
+            return {
+                'success': False,
+                'error': 'Modelo de predicción no encontrado',
+                'message': f'No se encontró el archivo {model_path}'
+            }
+        
+        # Cargar modelo
+        model = joblib.load(model_path)
+        
+        # Preparar datos de entrada (mismas features que el entrenamiento)
+        input_data = {
+            'monthly_income': monthly_income,
+            'monthly_expenses': monthly_expenses,
+            'net_profit': net_profit,
+            'profit_margin': profit_margin,
+            'cash_flow': cash_flow,
+            'debt_ratio': debt_ratio,
+            'business_age_years': business_age_years,
+            'employees': employees,
+            'digitalization_score': digitalization_score,
+            'access_to_credit': 1 if access_to_credit else 0
+        }
+        
+        # Crear DataFrame
+        input_df = pd.DataFrame([input_data])
+        
+        # Hacer predicción
+        predicted_growth = float(model.predict(input_df)[0])
+        
+        # Interpretar resultado
+        if predicted_growth < 0:
+            level = 'Bajo'
+            color = 'red'
+            interpretation = 'El negocio presenta señales de contracción. Se requiere atención inmediata.'
+        elif predicted_growth < 0.10:
+            level = 'Moderado'
+            color = 'yellow'
+            interpretation = 'Crecimiento lento. Hay oportunidades de mejora significativas.'
+        elif predicted_growth < 0.25:
+            level = 'Bueno'
+            color = 'green'
+            interpretation = 'Crecimiento saludable. El negocio está en buen camino.'
+        else:
+            level = 'Excelente'
+            color = 'green'
+            interpretation = 'Alto potencial de crecimiento. El negocio está muy bien posicionado.'
+        
+        # Generar recomendaciones basadas en los inputs
+        recommendations = []
+        
+        if profit_margin < 0.15:
+            recommendations.append('📊 Mejorar el margen de utilidad reduciendo costos o aumentando precios')
+        
+        if debt_ratio > 0.4:
+            recommendations.append('💰 Reducir el ratio de deuda para mejorar la salud financiera')
+        
+        if digitalization_score < 0.5:
+            recommendations.append('💻 Incrementar la digitalización del negocio (pagos digitales, presencia online)')
+        
+        if not access_to_credit:
+            recommendations.append('🏦 Explorar opciones de financiamiento para impulsar el crecimiento')
+        
+        if employees < 3 and monthly_income > 50000:
+            recommendations.append('👥 Considerar contratar más personal para escalar operaciones')
+        
+        if cash_flow < net_profit * 2:
+            recommendations.append('💵 Mejorar la gestión del flujo de efectivo')
+        
+        # Métricas adicionales
+        metrics = {
+            'profit_margin_pct': round(profit_margin * 100, 1),
+            'debt_ratio_pct': round(debt_ratio * 100, 1),
+            'digitalization_pct': round(digitalization_score * 100, 1),
+            'monthly_savings': monthly_income - monthly_expenses,
+            'roi_potential': round(predicted_growth * 100, 1)
+        }
+        
+        return {
+            'success': True,
+            'data': {
+                'predicted_growth': round(predicted_growth, 4),
+                'predicted_growth_percentage': round(predicted_growth * 100, 2),
+                'growth_level': level,
+                'growth_color': color,
+                'interpretation': interpretation,
+                'recommendations': recommendations if recommendations else ['🎉 Tu negocio está en excelente forma. Continúa con tu estrategia actual.'],
+                'metrics': metrics,
+                'timeframe': '12 meses',
+                'model_version': '1.0',
+                'input_summary': {
+                    'monthly_income': f'${monthly_income:,.0f}',
+                    'net_profit': f'${net_profit:,.0f}',
+                    'employees': employees,
+                    'business_age': f'{business_age_years} años'
+                }
+            },
+            'message': f'Predicción de crecimiento: {round(predicted_growth * 100, 2)}% en 12 meses'
+        }
+        
+    except Exception as error:
+        import traceback
+        traceback.print_exc()
+        return {
+            'success': False,
+            'error': str(error),
+            'message': 'Error al predecir crecimiento del negocio'
+        }
+
 @mcp.tool()
 async def get_fiscal_roadmap(
     actividad: str,
@@ -450,6 +582,46 @@ async def get_fiscal_roadmap(
     """
     return await generate_fiscal_roadmap_logic(actividad, ingresos_anuales, tiene_rfc, tiene_efirma, emite_cfdi)
 
+@mcp.tool()
+async def predict_business_growth(
+    monthly_income: float,
+    monthly_expenses: float,
+    net_profit: float,
+    profit_margin: float,
+    cash_flow: float,
+    debt_ratio: float,
+    business_age_years: int,
+    employees: int,
+    digitalization_score: float,
+    access_to_credit: bool
+) -> Dict[str, Any]:
+    """
+    Predecir el potencial de crecimiento del negocio en los próximos 12 meses.
+    
+    Usa un modelo de Machine Learning (Random Forest) entrenado con datos de negocios
+    para estimar el porcentaje de crecimiento esperado.
+    
+    Args:
+        monthly_income: Ingresos mensuales promedio (MXN)
+        monthly_expenses: Gastos mensuales promedio (MXN)
+        net_profit: Utilidad neta mensual (MXN)
+        profit_margin: Margen de utilidad (0.0 a 1.0, ej: 0.25 = 25%)
+        cash_flow: Flujo de efectivo mensual (MXN)
+        debt_ratio: Ratio de deuda (0.0 a 1.0, ej: 0.2 = 20%)
+        business_age_years: Antigüedad del negocio en años
+        employees: Número de empleados
+        digitalization_score: Nivel de digitalización (0.0 a 1.0, ej: 0.5 = 50%)
+        access_to_credit: Si tiene acceso a crédito
+    
+    Returns:
+        Dict con la predicción de crecimiento, interpretación y recomendaciones
+    """
+    return await predict_growth_logic(
+        monthly_income, monthly_expenses, net_profit, profit_margin,
+        cash_flow, debt_ratio, business_age_years, employees,
+        digitalization_score, access_to_credit
+    )
+
 # Función auxiliar sin decorador (para testing y llamadas internas)
 async def generate_fiscal_roadmap_logic(
     actividad: str,
@@ -460,6 +632,9 @@ async def generate_fiscal_roadmap_logic(
 ) -> Dict[str, Any]:
     """Lógica interna para generar el roadmap fiscal"""
     try:
+        # Construir lista de pasos del roadmap
+        steps = []
+        current_index = 0
         # Construir lista de pasos del roadmap
         steps = []
         current_index = 0
@@ -742,6 +917,7 @@ def main():
         print("   ✅ get_user_fiscal_context - Contexto del usuario")
         print("   ✅ open_map_location - Abrir mapa en ubicación específica")
         print("   ✅ get_fiscal_roadmap - Generar roadmap de tareas fiscales")
+        print("   ✅ predict_business_growth - Predecir crecimiento del negocio (ML)")
         print("💬 Prompts registrados:")
         print("   ✅ fiscal_consultation - Consulta fiscal personalizada")
         print("   ✅ risk_assessment - Evaluación de riesgo fiscal")
