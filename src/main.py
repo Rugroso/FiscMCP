@@ -355,6 +355,73 @@ async def get_user_fiscal_context(request: UserContextRequest) -> Dict[str, Any]
             'message': "Error obteniendo contexto del usuario"
         }
 
+@mcp.tool()
+async def open_map_location(location_type: str, place_id: Optional[str] = None, search_query: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Generar un deep link para abrir el mapa en la app con una ubicación específica.
+    
+    Esta herramienta permite al chatbot dirigir al usuario al mapa interactivo
+    mostrando bancos o oficinas del SAT cercanas, o un lugar específico.
+    
+    Args:
+        location_type: Tipo de lugar a buscar ("bank" para Banorte o "sat" para oficinas SAT)
+        place_id: ID opcional de un lugar específico de Google Places para enfocar el mapa
+        search_query: Query opcional para buscar un lugar específico (ej: "Banorte Reforma")
+    
+    Returns:
+        Dict con el deep link de la app y la información para mostrar al usuario
+    """
+    try:
+        # Validar el tipo de ubicación
+        if location_type not in ["bank", "sat"]:
+            return {
+                'success': False,
+                'error': "Tipo de ubicación inválido",
+                'message': "location_type debe ser 'bank' o 'sat'"
+            }
+        
+        # Construir el deep link para la app
+        # Formato: fiscai://map?type=bank&placeId=ChIJ...
+        base_url = "fiscai://map"
+        params = [f"type={location_type}"]
+        
+        if place_id:
+            params.append(f"placeId={place_id}")
+        
+        if search_query:
+            params.append(f"query={search_query}")
+        
+        deep_link = f"{base_url}?{'&'.join(params)}"
+        
+        # Construir mensaje descriptivo
+        location_name = "Banorte" if location_type == "bank" else "oficinas del SAT"
+        
+        if place_id:
+            message = f"Abriendo mapa enfocado en un {location_name} específico"
+        elif search_query:
+            message = f"Abriendo mapa buscando: {search_query}"
+        else:
+            message = f"Abriendo mapa con {location_name} cercanos"
+        
+        return {
+            'success': True,
+            'data': {
+                'deep_link': deep_link,
+                'location_type': location_type,
+                'place_id': place_id,
+                'search_query': search_query,
+                'user_message': f"📍 {message}. El mapa se abrirá automáticamente."
+            },
+            'message': message
+        }
+        
+    except Exception as error:
+        return {
+            'success': False,
+            'error': str(error),
+            'message': "Error generando enlace al mapa"
+        }
+
 # ====== PROMPTS MCP ======
 
 @mcp.prompt()
@@ -496,7 +563,9 @@ def main():
         print("   ✅ chat_with_fiscal_assistant - Chat con Juan Pablo")
         print("   ✅ analyze_fiscal_risk - Análisis de riesgo fiscal")
         print("   ✅ search_fiscal_documents - Búsqueda de documentos")
+        print("   ✅ search_places_tool - Búsqueda de lugares (bancos, SAT)")
         print("   ✅ get_user_fiscal_context - Contexto del usuario")
+        print("   ✅ open_map_location - Abrir mapa en ubicación específica")
         print("💬 Prompts registrados:")
         print("   ✅ fiscal_consultation - Consulta fiscal personalizada")
         print("   ✅ risk_assessment - Evaluación de riesgo fiscal")
