@@ -12,6 +12,92 @@ if config.GEMINI_API_KEY:
 else:
     raise ValueError("GEMINI_API_KEY no está configurada")
 
+# System Prompt con detección de ubicaciones
+SYSTEM_PROMPT = """
+Eres Juan Pablo, un asistente fiscal experto en México especializado en ayudar a micro y pequeños negocios.
+
+**CAPACIDADES ESPECIALES:**
+
+1. **Ubicaciones de Bancos y SAT:**
+   - Cuando el usuario pregunte sobre dónde encontrar un banco Banorte o una oficina del SAT
+   - USA la herramienta 'open_map_location' para abrir el mapa
+   - Ejemplos de preguntas que deben activar el mapa:
+     * "¿Dónde hay un Banorte?"
+     * "¿Dónde está el SAT más cercano?"
+     * "Necesito ir a un banco"
+     * "Muéstrame oficinas del SAT"
+     * "Busca un Banorte en Reforma"
+     * "¿Hay alguna oficina del SAT cerca?"
+   
+2. **Asesoría Fiscal:**
+   - Proporciona información sobre régimen fiscal, obligaciones, trámites
+   - USA la herramienta 'get_fiscal_advice' para consultas de formalización
+   
+3. **Análisis de Riesgo:**
+   - Evalúa la situación fiscal del usuario
+   - USA la herramienta 'analyze_fiscal_risk' cuando pregunten sobre su nivel de cumplimiento
+
+**FORMATO DE RESPUESTA PARA UBICACIONES:**
+Cuando uses 'open_map_location', tu respuesta debe ser breve y clara:
+- "¡Claro! Te abro el mapa con los Banorte más cercanos."
+- "Perfecto, te muestro las oficinas del SAT en tu zona."
+- "Busco Banorte en Reforma para ti."
+
+**NO incluyas las coordenadas o detalles técnicos en tu respuesta, eso lo maneja el mapa automáticamente.**
+
+**Tono:** Cercano, profesional pero amigable, como un asesor de confianza.
+"""
+
+def detect_user_intent(message: str) -> Dict[str, Any]:
+    """
+    Detecta la intención del usuario antes de llamar a Gemini
+    para optimizar el uso de herramientas
+    """
+    message_lower = message.lower()
+    
+    # Palabras clave para búsqueda de ubicaciones
+    location_keywords = {
+        'bank': ['banorte', 'banco', 'sucursal bancaria', 'ir al banco', 'sucursal'],
+        'sat': ['sat', 'oficina del sat', 'servicio de administración tributaria', 
+                'centro tributario', 'módulo de atención', 'oficina tributaria']
+    }
+    
+    # Verbos que indican búsqueda de ubicación
+    location_verbs = ['dónde', 'donde', 'ubica', 'encuentra', 'busca', 'hay', 
+                      'mostrar', 'muestra', 'llevar', 'ir', 'cerca', 'cercano',
+                      'necesito ir', 'quiero ir', 'cómo llegar']
+    
+    # Detectar tipo de ubicación
+    location_type = None
+    if any(keyword in message_lower for keyword in location_keywords['bank']):
+        location_type = 'bank'
+    elif any(keyword in message_lower for keyword in location_keywords['sat']):
+        location_type = 'sat'
+    
+    # Detectar si es una pregunta de ubicación
+    is_location_query = any(verb in message_lower for verb in location_verbs)
+    
+    # Extraer posible query específica (nombre de lugar)
+    search_query = None
+    location_indicators = [' en ', ' de ', ' cerca de ', ' por ']
+    for indicator in location_indicators:
+        if indicator in message_lower:
+            parts = message_lower.split(indicator, 1)
+            if len(parts) > 1:
+                # Extraer hasta el siguiente espacio o final
+                potential_query = parts[1].split('.')[0].split(',')[0].split('?')[0].strip()
+                # Solo si no es muy corto
+                if len(potential_query) > 2:
+                    search_query = potential_query
+                    break
+    
+    return {
+        'is_location_query': is_location_query and location_type is not None,
+        'location_type': location_type,
+        'search_query': search_query,
+        'requires_map': is_location_query and location_type is not None
+    }
+
 class GeminiClient:
     """Cliente para interactuar con Google Gemini AI"""
     
@@ -101,9 +187,9 @@ class GeminiClient:
             import json
             
             system_instruction = (
-                "Eres un asesor fiscal para micro-negocios en México. "
+                "Eres un contador experto en México. "
                 "Responde SOLO con el CONTEXTO provisto. Si no es suficiente, indica claramente "
-                "'Información insuficiente en la base'. Usa lenguaje claro. Incluye mini-citas de fuente."
+                "'Información insuficiente en la base'. Usa lenguaje claro y profesional."
             )
             
             user_prompt = f"""
@@ -111,13 +197,22 @@ PERFIL:
 {json.dumps(profile, ensure_ascii=False, indent=2)}
 
 TAREA:
-1) Recomienda régimen fiscal (y alternativas si aplica).
-2) Explica pasos de formalización (RFC, e.firma, CFDI, declaraciones).
-3) Genera un porcentaje de potencial de crecimiento.
-4) Lista 5-8 tareas accionables (formato checklist) para seguir con ese plan de crecimiento.
-5) Si procede, sugiere recordatorios calendario (mensual/anual).
-6) Busca beneficios PYME fiscales aplicables a ese perfil, especifica que el banco es BANORTE.
-7) Cierra con "Fuentes" (Título -> URL) basadas en los fragmentos usados.
+Como contador en México, necesito analizar este perfil y sugerir:
+
+1) **Régimen fiscal más conveniente:**
+   - Identifica el régimen fiscal óptimo para este perfil
+   - Explica brevemente por qué es el más adecuado
+   - Menciona alternativas si aplican
+
+2) **Pasos específicos de formalización:**
+   - Lista los pasos concretos para formalizarse (RFC, e.firma, CFDI, declaraciones)
+   - Indica el orden recomendado
+   - Menciona requisitos y documentos necesarios
+
+3) **Fuentes oficiales del SAT consultadas:**
+   - Lista las fuentes utilizadas con formato: Título -> URL
+   - Usa solo las fuentes del CONTEXTO provisto
+   - Cita las secciones relevantes
 
 CONTEXTO:
 {context}
@@ -218,7 +313,7 @@ Responde SOLO con la recomendación mejorada, sin comentarios adicionales.
         relevant_docs: List[Dict[str, Any]] = None
     ) -> str:
         """
-        Chat con el asistente fiscal usando Gemini
+        Chat con el asistente fiscal usando Gemini con detección automática de intenciones
         
         Args:
             message: Mensaje del usuario
@@ -227,9 +322,36 @@ Responde SOLO con la recomendación mejorada, sin comentarios adicionales.
             relevant_docs: Documentos relevantes
             
         Returns:
-            Respuesta del asistente
+            Respuesta del asistente en formato JSON con texto, deep_link y tool_used
         """
         try:
+            # 1. DETECCIÓN AUTOMÁTICA DE INTENCIONES
+            intent = detect_user_intent(message)
+            
+            # 2. SI ES UNA CONSULTA DE UBICACIÓN, LLAMAR DIRECTAMENTE A open_map_location
+            if intent['requires_map']:
+                # Importar la función del mapa
+                from .main import open_map_location
+                
+                # Llamar a la herramienta
+                map_response = await open_map_location(
+                    location_type=intent['location_type'],
+                    search_query=intent['search_query']
+                )
+                
+                # Retornar respuesta estructurada
+                import json
+                return json.dumps({
+                    'text': map_response['user_message'],
+                    'deep_link': map_response['deep_link'],
+                    'tool_used': 'open_map_location',
+                    'details': {
+                        'location_type': intent['location_type'],
+                        'search_query': intent['search_query']
+                    }
+                }, ensure_ascii=False)
+            
+            # 3. SI NO ES UBICACIÓN, CONTINUAR CON FLUJO NORMAL DE CHAT
             if chat_history is None:
                 chat_history = []
             if relevant_docs is None:
@@ -266,7 +388,7 @@ Responde SOLO con la recomendación mejorada, sin comentarios adicionales.
                 docs_context = f"**Documentos de Referencia:**\n" + "\n".join(docs_list)
             
             prompt = f"""
-Eres Juan Pablo, un asistente fiscal experto en México especializado en ayudar a micro-negocios y emprendedores con su formalización fiscal.
+{SYSTEM_PROMPT}
 
 {user_info}
 
@@ -295,11 +417,24 @@ Responde de manera concisa pero completa:
                 prompt
             )
             
-            return response.text
+            # Retornar respuesta simple de chat
+            import json
+            return json.dumps({
+                'text': response.text,
+                'deep_link': None,
+                'tool_used': 'chat',
+                'details': {}
+            }, ensure_ascii=False)
             
         except Exception as error:
             print(f"Error en chat con asistente: {error}")
-            raise ValueError("Lo siento, hubo un error al procesar tu mensaje. Por favor, intenta de nuevo.")
+            import json
+            return json.dumps({
+                'text': f"Lo siento, hubo un error al procesar tu mensaje: {str(error)}",
+                'deep_link': None,
+                'tool_used': 'error',
+                'details': {'error': str(error)}
+            }, ensure_ascii=False)
     
     async def analyze_fiscal_risk(self, profile: Dict[str, Any]) -> Dict[str, Any]:
         """
