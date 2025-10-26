@@ -680,7 +680,7 @@ async def get_financial_recommendations_logic(
             f"{'Con RFC registrado' if tiene_rfc else 'Sin RFC'}. "
             f"{f'Regimen fiscal: {regimen_fiscal}.' if regimen_fiscal else ''} "
             f"{f'Con {num_empleados} empleados.' if num_empleados > 0 else 'Sin empleados.'} "
-            "Devuelve solo la descripción limpia, sin saltos de línea, sin formato extraño, y que sea fácil de entender para un usuario MCP. No incluyas referencias, links ni fuentes en el texto."
+            "Devuelve solo la descripción limpia, sin saltos de línea, sin formato extraño, y que sea fácil de entender para un usuario MCP."
         )
 
         consulta_deducciones = (
@@ -688,7 +688,7 @@ async def get_financial_recommendations_logic(
             f"Actividad: {actividad}. "
             f"{'Régimen ' + regimen_fiscal if regimen_fiscal else 'Persona física'}. "
             f"Gastos mensuales: ${gastos_mensuales:,.0f} MXN. "
-            "Devuelve solo la descripción limpia, sin saltos de línea, sin formato extraño, y que sea fácil de entender para un usuario MCP. No incluyas referencias, links ni fuentes en el texto."
+            "Devuelve solo la descripción limpia, sin saltos de línea, sin formato extraño, y que sea fácil de entender para un usuario MCP."
         )
         
         # Generar embeddings para ambas consultas
