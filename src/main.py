@@ -622,6 +622,243 @@ async def predict_business_growth(
         digitalization_score, access_to_credit
     )
 
+@mcp.tool()
+async def get_financial_recommendations(
+    actividad: str,
+    ingresos_mensuales: float,
+    gastos_mensuales: float,
+    tiene_rfc: bool = False,
+    regimen_fiscal: Optional[str] = None,
+    num_empleados: int = 0
+) -> Dict[str, Any]:
+    """
+    Obtener recomendaciones financieras personalizadas sobre créditos y deducciones fiscales.
+    
+    Consulta la base de conocimiento fiscal (fiscai_documents) para encontrar información
+    relevante sobre:
+    - Opciones de crédito y financiamiento disponibles
+    - Deducciones fiscales aplicables según el régimen
+    - Incentivos fiscales para tu tipo de negocio
+    - Optimización fiscal y ahorro de impuestos
+    
+    Args:
+        actividad: Actividad económica o tipo de negocio
+        ingresos_mensuales: Ingresos mensuales promedio (MXN)
+        gastos_mensuales: Gastos mensuales promedio (MXN)
+        tiene_rfc: Si ya tiene RFC registrado
+        regimen_fiscal: Régimen fiscal actual (ej: "RIF", "RESICO", "Persona Física")
+        num_empleados: Número de empleados
+    
+    Returns:
+        Dict con recomendaciones de crédito, deducciones fiscales e incentivos
+    """
+    return await get_financial_recommendations_logic(
+        actividad, ingresos_mensuales, gastos_mensuales,
+        tiene_rfc, regimen_fiscal, num_empleados
+    )
+
+# Función auxiliar sin decorador (para testing y llamadas internas)
+async def get_financial_recommendations_logic(
+    actividad: str,
+    ingresos_mensuales: float,
+    gastos_mensuales: float,
+    tiene_rfc: bool = False,
+    regimen_fiscal: Optional[str] = None,
+    num_empleados: int = 0
+) -> Dict[str, Any]:
+    """Lógica interna para obtener recomendaciones financieras"""
+    try:
+        # Calcular métricas básicas
+        ingresos_anuales = ingresos_mensuales * 12
+        utilidad_mensual = ingresos_mensuales - gastos_mensuales
+        margen_utilidad = (utilidad_mensual / ingresos_mensuales) if ingresos_mensuales > 0 else 0
+        
+        # Construir consulta para buscar información relevante
+        consulta_creditos = f"""
+        Opciones de crédito y financiamiento para {actividad}.
+        Ingresos anuales: ${ingresos_anuales:,.0f} MXN.
+        {'Con RFC registrado' if tiene_rfc else 'Sin RFC'}.
+        {f'Régimen fiscal: {regimen_fiscal}' if regimen_fiscal else ''}.
+        {f'Con {num_empleados} empleados' if num_empleados > 0 else 'Sin empleados'}.
+        """
+        
+        consulta_deducciones = f"""
+        Deducciones fiscales y beneficios tributarios para {actividad}.
+        {'Régimen ' + regimen_fiscal if regimen_fiscal else 'Persona física'}.
+        Gastos mensuales: ${gastos_mensuales:,.0f} MXN.
+        """
+        
+        # Generar embeddings para ambas consultas
+        embedding_creditos = await gemini_client.generate_embedding(consulta_creditos)
+        embedding_deducciones = await gemini_client.generate_embedding(consulta_deducciones)
+        
+        # Buscar documentos relevantes
+        docs_creditos = []
+        docs_deducciones = []
+        
+        if embedding_creditos:
+            docs_creditos = await supabase_client.search_similar_documents(
+                embedding=embedding_creditos,
+                limit=3,
+                threshold=0.5
+            )
+        
+        if embedding_deducciones:
+            docs_deducciones = await supabase_client.search_similar_documents(
+                embedding=embedding_deducciones,
+                limit=3,
+                threshold=0.5
+            )
+        
+        # Procesar recomendaciones de crédito
+        credit_options = []
+        for doc in docs_creditos:
+            if doc.get('similarity', 0) > 0.5:
+                credit_options.append({
+                    'title': doc.get('title', 'Opción de financiamiento'),
+                    'description': doc.get('content', '')[:300] + '...',
+                    'source': doc.get('source_url', ''),
+                    'relevance': round(doc.get('similarity', 0) * 100, 1)
+                })
+        
+        # Procesar deducciones fiscales
+        tax_deductions = []
+        for doc in docs_deducciones:
+            if doc.get('similarity', 0) > 0.5:
+                tax_deductions.append({
+                    'title': doc.get('title', 'Deducción fiscal'),
+                    'description': doc.get('content', '')[:300] + '...',
+                    'source': doc.get('source_url', ''),
+                    'relevance': round(doc.get('similarity', 0) * 100, 1)
+                })
+        
+        # Generar recomendaciones generales basadas en el perfil
+        general_recommendations = []
+        
+        # Recomendaciones de crédito
+        if not tiene_rfc:
+            general_recommendations.append({
+                'type': 'credit',
+                'priority': 'high',
+                'title': 'Obtén tu RFC para acceder a créditos',
+                'description': 'La mayoría de opciones de financiamiento requieren RFC activo.',
+                'action': 'Registrar RFC en el SAT'
+            })
+        else:
+            if ingresos_anuales < 300000:
+                general_recommendations.append({
+                    'type': 'credit',
+                    'priority': 'medium',
+                    'title': 'Microcréditos para pequeños negocios',
+                    'description': 'Explora opciones de microcréditos con tasas preferenciales.',
+                    'action': 'Consultar programas de apoyo a MiPyMES'
+                })
+            elif ingresos_anuales < 2000000:
+                general_recommendations.append({
+                    'type': 'credit',
+                    'priority': 'medium',
+                    'title': 'Créditos PyME',
+                    'description': 'Accede a créditos empresariales con mejores condiciones.',
+                    'action': 'Comparar opciones en bancos y financieras'
+                })
+            else:
+                general_recommendations.append({
+                    'type': 'credit',
+                    'priority': 'medium',
+                    'title': 'Financiamiento empresarial',
+                    'description': 'Considera créditos corporativos y líneas de crédito revolvente.',
+                    'action': 'Consultar banca empresarial'
+                })
+        
+        # Recomendaciones de deducciones
+        if tiene_rfc:
+            general_recommendations.append({
+                'type': 'deduction',
+                'priority': 'high',
+                'title': 'Deduce gastos operativos',
+                'description': f'Puedes deducir hasta ${gastos_mensuales * 12:,.0f} MXN anuales en gastos relacionados.',
+                'action': 'Conservar facturas y comprobantes'
+            })
+            
+            if num_empleados > 0:
+                general_recommendations.append({
+                    'type': 'deduction',
+                    'priority': 'high',
+                    'title': 'Deducciones por nómina',
+                    'description': 'Los sueldos y prestaciones son 100% deducibles.',
+                    'action': 'Registrar empleados en el IMSS'
+                })
+        
+        if regimen_fiscal in ['RIF', 'RESICO']:
+            general_recommendations.append({
+                'type': 'incentive',
+                'priority': 'high',
+                'title': 'Beneficios de régimen simplificado',
+                'description': f'El régimen {regimen_fiscal} ofrece tasas reducidas y facilidades.',
+                'action': 'Aprovechar beneficios fiscales del régimen'
+            })
+        
+        # Calcular score de salud financiera
+        health_score = 0
+        if tiene_rfc:
+            health_score += 30
+        if margen_utilidad > 0.2:
+            health_score += 25
+        if utilidad_mensual > 0:
+            health_score += 20
+        if num_empleados > 0:
+            health_score += 15
+        if regimen_fiscal:
+            health_score += 10
+        
+        return {
+            'success': True,
+            'data': {
+                'financial_health': {
+                    'score': health_score,
+                    'level': 'Excelente' if health_score >= 80 else 'Bueno' if health_score >= 60 else 'Regular' if health_score >= 40 else 'Necesita mejorar',
+                    'monthly_profit': utilidad_mensual,
+                    'profit_margin': round(margen_utilidad * 100, 1),
+                    'annual_income': ingresos_anuales
+                },
+                'credit_options': credit_options if credit_options else [
+                    {
+                        'title': 'Consultar opciones de financiamiento',
+                        'description': 'No se encontraron opciones específicas en la base de datos. Contacta instituciones financieras.',
+                        'source': '',
+                        'relevance': 0
+                    }
+                ],
+                'tax_deductions': tax_deductions if tax_deductions else [
+                    {
+                        'title': 'Consultar deducciones fiscales',
+                        'description': 'No se encontraron deducciones específicas en la base de datos. Consulta con un contador.',
+                        'source': '',
+                        'relevance': 0
+                    }
+                ],
+                'recommendations': general_recommendations,
+                'profile': {
+                    'actividad': actividad,
+                    'monthly_income': ingresos_mensuales,
+                    'monthly_expenses': gastos_mensuales,
+                    'has_rfc': tiene_rfc,
+                    'regime': regimen_fiscal or 'No especificado',
+                    'employees': num_empleados
+                }
+            },
+            'message': f'Encontradas {len(credit_options)} opciones de crédito y {len(tax_deductions)} deducciones fiscales'
+        }
+        
+    except Exception as error:
+        import traceback
+        traceback.print_exc()
+        return {
+            'success': False,
+            'error': str(error),
+            'message': 'Error al obtener recomendaciones financieras'
+        }
+
 # Función auxiliar sin decorador (para testing y llamadas internas)
 async def generate_fiscal_roadmap_logic(
     actividad: str,
