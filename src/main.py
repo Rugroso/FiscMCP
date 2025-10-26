@@ -424,6 +424,179 @@ async def open_map_location(location_type: str, place_id: Optional[str] = None, 
             'message': "Error generando enlace al mapa"
         }
 
+@mcp.tool()
+async def get_fiscal_roadmap(
+    actividad: str,
+    ingresos_anuales: Optional[int] = None,
+    tiene_rfc: bool = False,
+    tiene_efirma: bool = False,
+    emite_cfdi: bool = False
+) -> Dict[str, Any]:
+    """
+    Generar un roadmap personalizado de tareas para formalización fiscal.
+    
+    Crea una lista de pasos (to-do list) con el progreso actual del usuario
+    y las tareas pendientes para alcanzar el cumplimiento fiscal completo.
+    
+    Args:
+        actividad: Actividad económica o tipo de negocio
+        ingresos_anuales: Ingresos anuales estimados (opcional)
+        tiene_rfc: Si ya tiene RFC registrado
+        tiene_efirma: Si ya tiene e.firma activa
+        emite_cfdi: Si ya emite facturas CFDI
+    
+    Returns:
+        Dict con el roadmap de tareas, progreso actual y meta
+    """
+    return await generate_fiscal_roadmap_logic(actividad, ingresos_anuales, tiene_rfc, tiene_efirma, emite_cfdi)
+
+# Función auxiliar sin decorador (para testing y llamadas internas)
+async def generate_fiscal_roadmap_logic(
+    actividad: str,
+    ingresos_anuales: Optional[int] = None,
+    tiene_rfc: bool = False,
+    tiene_efirma: bool = False,
+    emite_cfdi: bool = False
+) -> Dict[str, Any]:
+    """Lógica interna para generar el roadmap fiscal"""
+    try:
+        # Construir lista de pasos del roadmap
+        steps = []
+        current_index = 0
+        
+        # Paso 1: Obtener RFC
+        if tiene_rfc:
+            steps.append({
+                'key': 'rfc',
+                'title': 'RFC Registrado',
+                'subtitle': 'Registro Federal de Contribuyentes',
+                'status': 'done'
+            })
+            current_index = 1
+        else:
+            steps.append({
+                'key': 'rfc',
+                'title': 'Obtener RFC',
+                'subtitle': 'Primer paso de formalización',
+                'status': 'active'
+            })
+        
+        # Paso 2: Obtener e.firma
+        if tiene_efirma:
+            steps.append({
+                'key': 'efirma',
+                'title': 'e.firma Activa',
+                'subtitle': 'Firma electrónica del SAT',
+                'status': 'done'
+            })
+            if current_index == 1:
+                current_index = 2
+        else:
+            steps.append({
+                'key': 'efirma',
+                'title': 'Obtener e.firma',
+                'subtitle': 'Identidad digital ante el SAT',
+                'status': 'active' if tiene_rfc else 'locked'
+            })
+            if tiene_rfc and current_index == 1:
+                current_index = 1
+        
+        # Paso 3: Seleccionar régimen fiscal
+        if tiene_rfc and tiene_efirma:
+            steps.append({
+                'key': 'regimen',
+                'title': 'Régimen Fiscal',
+                'subtitle': 'Inscripción al régimen adecuado',
+                'status': 'done' if emite_cfdi else 'active'
+            })
+            if not emite_cfdi and current_index == 2:
+                current_index = 2
+        else:
+            steps.append({
+                'key': 'regimen',
+                'title': 'Elegir Régimen',
+                'subtitle': 'Según tu actividad e ingresos',
+                'status': 'locked'
+            })
+        
+        # Paso 4: Emitir CFDI
+        if emite_cfdi:
+            steps.append({
+                'key': 'cfdi',
+                'title': 'Facturación Activa',
+                'subtitle': 'Emisión de CFDI',
+                'status': 'done'
+            })
+            current_index = 4
+        else:
+            steps.append({
+                'key': 'cfdi',
+                'title': 'Activar Facturación',
+                'subtitle': 'Configurar emisión de CFDI',
+                'status': 'active' if (tiene_rfc and tiene_efirma) else 'locked'
+            })
+            if tiene_rfc and tiene_efirma and current_index == 2:
+                current_index = 3
+        
+        # Paso 5: Declaraciones mensuales
+        if emite_cfdi:
+            steps.append({
+                'key': 'declaraciones',
+                'title': 'Declaraciones al Día',
+                'subtitle': 'Cumplimiento mensual y anual',
+                'status': 'active'
+            })
+            if current_index == 4:
+                current_index = 4
+        else:
+            steps.append({
+                'key': 'declaraciones',
+                'title': 'Declaraciones',
+                'subtitle': 'Obligaciones fiscales mensuales',
+                'status': 'locked'
+            })
+        
+        # Calcular progreso
+        total_steps = len(steps)
+        completed_steps = sum(1 for s in steps if s['status'] == 'done')
+        progress_pct = (completed_steps / total_steps) * 100 if total_steps > 0 else 0
+        
+        # Meta final
+        goal = {
+            'title': 'Meta: Empresa formal y al día',
+            'subtitle': 'Cumplimiento completo',
+            'description': 'Todas las obligaciones fiscales cumplidas y al corriente'
+        }
+        
+        return {
+            'success': True,
+            'data': {
+                'steps': steps,
+                'currentIndex': current_index,
+                'totalSteps': total_steps,
+                'completedSteps': completed_steps,
+                'progressPercent': round(progress_pct, 1),
+                'goal': goal,
+                'title': 'Roadmap fiscal',
+                'progressTitle': 'Avance',
+                'profile': {
+                    'actividad': actividad,
+                    'ingresos_anuales': ingresos_anuales,
+                    'tiene_rfc': tiene_rfc,
+                    'tiene_efirma': tiene_efirma,
+                    'emite_cfdi': emite_cfdi
+                }
+            },
+            'message': f"Roadmap generado: {completed_steps}/{total_steps} pasos completados ({round(progress_pct)}%)"
+        }
+        
+    except Exception as error:
+        return {
+            'success': False,
+            'error': str(error),
+            'message': "Error generando roadmap fiscal"
+        }
+
 # ====== PROMPTS MCP ======
 
 @mcp.prompt()
@@ -568,6 +741,7 @@ def main():
         print("   ✅ search_places_tool - Búsqueda de lugares (bancos, SAT)")
         print("   ✅ get_user_fiscal_context - Contexto del usuario")
         print("   ✅ open_map_location - Abrir mapa en ubicación específica")
+        print("   ✅ get_fiscal_roadmap - Generar roadmap de tareas fiscales")
         print("💬 Prompts registrados:")
         print("   ✅ fiscal_consultation - Consulta fiscal personalizada")
         print("   ✅ risk_assessment - Evaluación de riesgo fiscal")
