@@ -21,7 +21,11 @@ class Config:
     
     # Gemini AI
     GEMINI_API_KEY: str = os.getenv('GEMINI_API_KEY', '')
-    GEMINI_MODEL: str = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')  # Igual que simulate_recomendation.py
+    GEMINI_MODEL: str = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
+    GEMINI_FALLBACK_MODELS: str = os.getenv(
+        'GEMINI_FALLBACK_MODELS',
+        'gemini-2.5-flash-lite,gemini-2.5-pro,gemini-3.1-pro-preview,gemini-3-flash-preview,gemini-3.1-flash-lite-preview'
+    )
     GEMINI_EMBED_MODEL: str = os.getenv('GEMINI_EMBED_MODEL', 'gemini-embedding-001')  # Igual que EMBED_MODEL en simulate
     
     # Configuración de embeddings y RAG

@@ -4,6 +4,12 @@ Cliente para Google Gemini AI - Integración con FiscAI
 import asyncio
 from typing import List, Dict, Any, Optional
 import google.generativeai as genai
+
+try:
+    from google.api_core import exceptions as google_exceptions
+except Exception:
+    google_exceptions = None
+
 from .config import config
 
 # Configurar Gemini
@@ -102,7 +108,114 @@ class GeminiClient:
     """Cliente para interactuar con Google Gemini AI"""
     
     def __init__(self):
-        self.model = genai.GenerativeModel(config.GEMINI_MODEL)
+        self.model_candidates = self._build_model_candidates()
+
+    def _build_model_candidates(self) -> List[str]:
+        fallback_models = [
+            model.strip()
+            for model in config.GEMINI_FALLBACK_MODELS.split(',')
+            if model.strip()
+        ]
+
+        candidates: List[str] = []
+        for model_name in [config.GEMINI_MODEL, *fallback_models]:
+            if model_name not in candidates:
+                candidates.append(model_name)
+
+        return candidates
+
+    def _build_generative_model(
+        self,
+        model_name: str,
+        system_instruction: Optional[str] = None,
+        generation_config: Optional[Dict[str, Any]] = None,
+    ):
+        kwargs: Dict[str, Any] = {'model_name': model_name}
+        if system_instruction:
+            kwargs['system_instruction'] = system_instruction
+        if generation_config:
+            kwargs['generation_config'] = generation_config
+        return genai.GenerativeModel(**kwargs)
+
+    def _error_text(self, error: Exception) -> str:
+        return str(error).lower()
+
+    def _error_code(self, error: Exception) -> Optional[int]:
+        for attr in ('code', 'status_code'):
+            value = getattr(error, attr, None)
+            if value is None:
+                continue
+            try:
+                return int(getattr(value, 'value', value))
+            except (TypeError, ValueError):
+                continue
+
+        response = getattr(error, 'response', None)
+        if response is not None:
+            status_code = getattr(response, 'status_code', None)
+            try:
+                return int(status_code) if status_code is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        return None
+
+    def _is_model_quota_error(self, error: Exception) -> bool:
+        error_text = self._error_text(error)
+        error_code = self._error_code(error)
+
+        quota_keywords = (
+            'resource exhausted',
+            'rate limit',
+            'quota',
+            'too many requests',
+            'billing',
+            'credits',
+            'insufficient',
+        )
+
+        if error_code in {400, 429, 500, 503, 504} and any(keyword in error_text for keyword in quota_keywords + ('failed precondition',)):
+            return True
+
+        if error_code == 403 and any(keyword in error_text for keyword in ('quota', 'billing', 'credits', 'resource exhausted', 'permission denied')):
+            return True
+
+        if google_exceptions is not None:
+            resource_exhausted = getattr(google_exceptions, 'ResourceExhausted', None)
+            if resource_exhausted is not None and isinstance(error, resource_exhausted):
+                return True
+
+        return any(keyword in error_text for keyword in quota_keywords)
+
+    async def _generate_content_with_fallback(
+        self,
+        prompt: str,
+        *,
+        system_instruction: Optional[str] = None,
+        generation_config: Optional[Dict[str, Any]] = None,
+    ):
+        last_error: Optional[Exception] = None
+
+        for index, model_name in enumerate(self.model_candidates):
+            model = self._build_generative_model(
+                model_name,
+                system_instruction=system_instruction,
+                generation_config=generation_config,
+            )
+
+            try:
+                return await asyncio.to_thread(model.generate_content, prompt)
+            except Exception as error:
+                last_error = error
+                if not self._is_model_quota_error(error) or index == len(self.model_candidates) - 1:
+                    raise
+
+                print(f"[GEMINI] Error con modelo {model_name}: {error}. Probando siguiente modelo...")
+
+        if last_error is not None:
+            raise last_error
+
+        raise RuntimeError("No se pudo generar contenido con ningún modelo configurado")
     
     async def generate_embedding(self, text: str) -> List[float]:
         """
@@ -218,20 +331,13 @@ CONTEXTO:
 {context}
 """.strip()
 
-            # Crear modelo con system instruction (igual que simulate_recomendation.py)
-            model = genai.GenerativeModel(
-                model_name=config.GEMINI_MODEL,
+            response = await self._generate_content_with_fallback(
+                user_prompt,
                 system_instruction=system_instruction,
                 generation_config={
                     "temperature": 0.3,
                     "max_output_tokens": 1200
-                }
-            )
-            
-            # Generar contenido
-            response = await asyncio.to_thread(
-                model.generate_content,
-                user_prompt
+                },
             )
             
             return response.text or "(Sin texto)"
@@ -286,9 +392,8 @@ Eres un experto asesor fiscal mexicano. Basándote en la siguiente información,
 Responde SOLO con la recomendación mejorada, sin comentarios adicionales.
 """
 
-            response = await asyncio.to_thread(
-                self.model.generate_content,
-                prompt
+            response = await self._generate_content_with_fallback(
+                prompt,
             )
             
             enhanced_text = response.text
@@ -422,9 +527,8 @@ Responde SOLO con la recomendación mejorada, sin comentarios adicionales.
 Responde de manera concisa pero completa:
 """
 
-            response = await asyncio.to_thread(
-                self.model.generate_content,
-                prompt
+            response = await self._generate_content_with_fallback(
+                prompt,
             )
             
             # Retornar respuesta simple de chat
@@ -485,9 +589,8 @@ Criterios de evaluación:
 - Rojo (61-100): Alto riesgo fiscal, acción inmediata requerida
 """
 
-            response = await asyncio.to_thread(
-                self.model.generate_content,
-                prompt
+            response = await self._generate_content_with_fallback(
+                prompt,
             )
             
             text = response.text

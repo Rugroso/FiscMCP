@@ -58,7 +58,8 @@ Configurar en un archivo `.env` en la raíz del proyecto o en el entorno del sis
 - PORT — Puerto para el servidor HTTP (por defecto `8000`).
 - NODE_ENV — `development` o `production`.
 - Opcionales:
-  - GEMINI_MODEL — Nombre del modelo Gemini (por defecto `gemini-2.0-flash`).
+  - GEMINI_MODEL — Nombre del modelo Gemini (por defecto `gemini-2.5-flash`).
+  - GEMINI_FALLBACK_MODELS — Lista separada por comas de modelos de respaldo (por defecto `gemini-2.5-flash-lite,gemini-2.5-pro,gemini-3.1-pro-preview,gemini-3-flash-preview,gemini-3.1-flash-lite-preview`).
   - GEMINI_EMBED_MODEL — Modelo de embeddings (por defecto `gemini-embedding-001`).
   - EMBED_DIM — Dimensionalidad del embedding (por defecto `768`).
   - SIMILARITY_THRESHOLD — Umbral de similitud (por defecto `0.6`).
